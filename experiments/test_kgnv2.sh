@@ -23,7 +23,7 @@ for (( i=0;i<${#DIST_TH_LIST[@]};i++)); do
         --dataset ps_grasp \
         --ps_data_mode ${TEST_DATA_MODE} \
         --keep_res \
-        --load_model ../exp/grasp_pose/kgnV2_${TRAIN_DATA_MODE}/model_last.pth \
+        --load_model ../exp/kgnv2.pth \
         --not_prefetch_test \
         --trainval \
         --kpt_type box \
@@ -42,3 +42,4 @@ for (( i=0;i<${#DIST_TH_LIST[@]};i++)); do
         --scale_coeff_k ${SCALE_KPT_COEFF}
         #--debug 5 \
         # --vis_results \
+    done

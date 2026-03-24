@@ -224,7 +224,7 @@ class PSGrasp(data.Dataset):
         grasp_poses = [np.array(poses) for poses in grasp_poses_list]
         grasp_widths_list = infos["grasp_widths"]
         grasp_widths = [np.array(widths) for widths in grasp_widths_list]
-        grasp_collision_list = np.array(infos["grasp_collision"])
+        grasp_collision_list = infos["grasp_collision"]
         grasp_collision = [np.array(collisions)
                            for collisions in grasp_collision_list]
 
