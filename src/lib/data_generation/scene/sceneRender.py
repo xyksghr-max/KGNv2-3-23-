@@ -371,7 +371,8 @@ if __name__ == "__main__":
     from data_generation import Sphere, Cuboid, Cylinder, Grasp
     from utils.keypoints import kpts_3d_to_2d, plot_grasps_kpts
     import trimesh.transformations as tra
-
+    import matplotlib
+    matplotlib.use('Agg')  # 强制使用静默后端，彻底封杀 Qt 冲突！
     import matplotlib.pyplot as plt
 
     grasp_mode = 1
@@ -403,7 +404,7 @@ if __name__ == "__main__":
     grasp_collides = np.concatenate(grasp_collides, axis=0)
 
     # grasp keypoints mode
-    grasp_kpts_mode = "hedron"
+    grasp_kpts_mode = "box"
 
     # take the images
     ins_masks = None
@@ -415,7 +416,7 @@ if __name__ == "__main__":
             ins_mask = ins_masks[idx]
 
         # plot the grasp keypoints - sample a few
-        sample_num = int(grasp_poses.shape[0] / 5)
+        sample_num = 5
         sample_idxes = np.random.choice(np.arange(grasp_poses.shape[0]), sample_num, replace=False)
         # grasp kpts cache
         grasp_kpts = []
@@ -447,7 +448,8 @@ if __name__ == "__main__":
         if ins_masks is not None:
             im = axarr[2].imshow(ins_mask)
             f.colorbar(im, ax=axarr[2])
-    plt.show() 
+        plt.imsave(f"defense_demo_cam_{idx}.png", color)
+    #plt.show() 
 
 
 
