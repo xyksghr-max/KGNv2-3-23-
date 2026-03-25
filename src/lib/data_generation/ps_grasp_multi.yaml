@@ -1,6 +1,6 @@
 SAVE_PATH: "../data/ps_grasp_multi_1k"
 CARDINALITY:
-  scene_num: 4
+  scene_num: 1000
   test_percentage: 20
 TABLE:
   size: 1
