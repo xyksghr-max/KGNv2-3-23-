@@ -8,7 +8,11 @@ Code release for our papers: ICRA'23 [Keypoint-GraspNet: Keypoint-based 6-DoF Gr
 
 Please follow [INSTALL.md](docs/INSTALL.md) to prepare for the environment.
 
-
+**Important Fixes for Environment:**
+To resolve the TensorBoard blank screen issue and protobuf version conflicts, ensure you install the following exact versions after setting up the original environment:
+```bash
+pip install tensorboardX tensorboard
+pip install protobuf==3.20.3
 
 ## Demo
 
@@ -75,7 +79,8 @@ First ``single/multi``: Evaluate the weight trained on single- or multi-object d
 
 Second ``single/multi``: Evaluate on single- or multi-object data. 
 
-
+**Note on Evaluation Weight:**
+The `test_kgnv2.sh` script has been updated to automatically evaluate the locally trained model (`../exp/grasp_pose/kgnV2_${TRAIN_DATA_MODE}/model_last.pth`) instead of the downloaded pre-trained weights.
 
 ## Acknowledgement
 
@@ -103,3 +108,8 @@ Please consider citing our work if you find the code helpful:
 }
 ```
 
+## KGN-Pro Modifications (Graduation Project Workspace)
+This repository is heavily customized and fixed based on the original KGNv2 codebase. Key engineering fixes include:
+- **Bug Fix**: Fixed NumPy array dimension mismatch errors in `ps_grasp.py`.
+- **Bug Fix**: Resolved Qt rendering backend conflicts in `sceneRender.py` for headless servers.
+- **Security**: Hardcoded validation mapping (`val` to `train`) to strictly prevent Test Set Leakage during the training phase.
