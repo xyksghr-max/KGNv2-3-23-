@@ -140,3 +140,17 @@ data/
 src/lib/models/networks/DCNv2/build/
 *.so
 *.egg-info
+
+# Local audit/reference materials that should not be pushed
+KGN-Pro-main/
+.codex
+2209.08752v4.pdf
+2303.05617v3.pdf
+2507.14820v2.pdf
+snapshot*.png
+src/defense_demo_cam_*.png
+3D 渲染窗口和 2D 的投影照片/
+3D 渲染窗口和RGB图片/
+多物体数据集的产生1.png
+多物体数据集产生2.png
+src/lib/models/networks/DCNv2/
