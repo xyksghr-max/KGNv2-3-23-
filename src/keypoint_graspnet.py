@@ -62,9 +62,15 @@ class KeypointGraspNet():
 
         # generate the keypoints
         if not self.opt.test_oracle_kpts:
-            kpts, centers, widths_gen, scales, scores = self._generate_kpts(detector_input)
+            kpts, centers, widths_gen, scales, scores, detect_stats = self._generate_kpts(detector_input)
         else:
             kpts, centers, widths_gen = self._generate_kpts_gt(detector_input)
+            scales = None
+            scores = np.array([], dtype=np.float32)
+            detect_stats = {
+                "decoded_candidates": int(kpts.shape[0]),
+                "score_filtered_candidates": int(kpts.shape[0]),
+            }
 
 
         # generate the grasps
@@ -77,8 +83,21 @@ class KeypointGraspNet():
         kpts_keep = []
         centers_keep = []
         scales_keep = []
+        analysis = {
+            "decoded_candidates": int(detect_stats["decoded_candidates"]),
+            "score_filtered_candidates": int(detect_stats["score_filtered_candidates"]),
+            "pnp_attempted": 0,
+            "pnp_failed": 0,
+            "scale_refine_failed": 0,
+            "reproj_filtered": 0,
+            "accepted_candidates": 0,
+            "accepted_scores": [],
+            "accepted_reprojection_errors": [],
+            "accepted_scales": [],
+        }
 
         for i in range(N_grasps):
+            analysis["pnp_attempted"] += 1
             
             # first determine the 3d keypoint distances used in the pnp algorithm
             if self.opt.open_width_canonical is not None:
@@ -111,6 +130,7 @@ class KeypointGraspNet():
             
             # skip if the grasp pose recovery failed
             if location is None or quaternion is None:
+                analysis["pnp_failed"] += 1
                 continue
         
             # if scale prediction mode
@@ -127,6 +147,7 @@ class KeypointGraspNet():
                 # refine based on depth
                 quaternion, location, succ_refine = self.refine(quaternion, location, center_this, depth_this)
                 if not succ_refine:
+                    analysis["scale_refine_failed"] += 1
                     continue
 
             # filter based on reprojection error
@@ -140,7 +161,13 @@ class KeypointGraspNet():
                 centers_keep.append(centers[i])
                 if self.opt.scale_kpts_mode:
                     scales_keep.append(scale)
+                    analysis["accepted_scales"].append(scale)
+                analysis["accepted_scores"].append(scores[i])
+                analysis["accepted_reprojection_errors"].append(reprojectionError)
+            else:
+                analysis["reproj_filtered"] += 1
 
+        analysis["accepted_candidates"] = len(locations)
         
         if not return_all:
             return np.array(quaternions), np.array(locations), np.array(widths), np.stack(kpts_keep) if len(kpts_keep) > 0 else np.array([]), np.array(scores_keep)
@@ -148,7 +175,7 @@ class KeypointGraspNet():
             return np.array(quaternions), np.array(locations), np.array(widths),\
                 np.stack(kpts_keep) if len(kpts_keep) > 0 else np.array([]), \
                 np.array(scores_keep), \
-                np.array(reproj_errors), np.array(centers_keep)
+                np.array(reproj_errors), np.array(centers_keep), analysis
                 
 
     def _generate_kpts(self, input):
@@ -159,24 +186,43 @@ class KeypointGraspNet():
         # only one class, so index zero. 
         # Get an array of (N_grasp, 13) results,
         # where the 13 = 2 (center coord) + 8 (kpts coord) + 1 (width) + 1 (score) + 1(ori_cls) + 1(scale)
-        dets = np.array(ret["results"][1])
+        dets = np.array(ret["results"][1], dtype=np.float32)
+        if dets.size == 0:
+            empty_kpts = np.zeros((0, 4, 2), dtype=np.float32)
+            empty_centers = np.zeros((0, 1, 2), dtype=np.float32)
+            empty_scores = np.zeros((0,), dtype=np.float32)
+            empty_widths = np.zeros((0,), dtype=np.float32)
+            detect_stats = {
+                "decoded_candidates": 0,
+                "score_filtered_candidates": 0,
+            }
+            if self.opt.sep_scale_branch:
+                return empty_kpts, empty_centers, empty_widths, np.zeros((0,), dtype=np.float32), empty_scores, detect_stats
+            return empty_kpts, empty_centers, empty_widths, None, empty_scores, detect_stats
+
         kpts_2d_pred = dets[:, 2:10].reshape(-1, 4, 2)
         centers_2d_pred = dets[:, :2].reshape(-1, 1, 2)
         widths_pred = dets[:, 10]
             
         # filter by scores
         scores = dets[:, 11]
-        kpts_2d_pred = kpts_2d_pred[scores > self.opt.center_thresh]
-        widths_pred = widths_pred[scores > self.opt.center_thresh]
-        centers_2d_pred = centers_2d_pred[scores > self.opt.center_thresh]
+        score_mask = scores > self.opt.center_thresh
+        kpts_2d_pred = kpts_2d_pred[score_mask]
+        widths_pred = widths_pred[score_mask]
+        centers_2d_pred = centers_2d_pred[score_mask]
+        scores = scores[score_mask]
+        detect_stats = {
+            "decoded_candidates": int(dets.shape[0]),
+            "score_filtered_candidates": int(score_mask.sum()),
+        }
 
         # the scales
         if self.opt.sep_scale_branch:
             scales = dets[:, 13]
-            scales = scales[scores > self.opt.center_thresh]
-            return kpts_2d_pred, centers_2d_pred, widths_pred, scales, scores
+            scales = scales[score_mask]
+            return kpts_2d_pred, centers_2d_pred, widths_pred, scales, scores, detect_stats
         else:
-            return kpts_2d_pred, centers_2d_pred, widths_pred, None, scores
+            return kpts_2d_pred, centers_2d_pred, widths_pred, None, scores, detect_stats
 
 
     def _generate_kpts_gt(self, input):

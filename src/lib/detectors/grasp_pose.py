@@ -38,7 +38,7 @@ class GraspPoseDetector(BaseDetector):
             D = 2 + 2*num_kpts + 1 + 1 + ...
     """
     with torch.no_grad():
-      torch.cuda.synchronize()
+      self._sync_cuda()
       output = self.model(images)[-1]
       output['hm'] = output['hm'].sigmoid_()
       #if self.opt.hm_hp and not self.opt.mse_loss:
@@ -59,7 +59,7 @@ class GraspPoseDetector(BaseDetector):
         scales = output["scales"]
       else:
         scales = None
-      torch.cuda.synchronize()
+      self._sync_cuda()
       forward_time = time.time()
       
       if self.opt.flip_test:

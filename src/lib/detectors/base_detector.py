@@ -97,6 +97,10 @@ class BaseDetector(object):
   def save_results(self, debugger, prefix):
     raise NotImplementedError
 
+  def _sync_cuda(self):
+    if self.opt.device.type == 'cuda':
+      torch.cuda.synchronize()
+
   def run(self, image_or_path_or_tensor, meta=None):
     # prepare
     load_time, pre_time, net_time, dec_time, post_time = 0, 0, 0, 0, 0
@@ -134,7 +138,7 @@ class BaseDetector(object):
         if "img_idx" in pre_processed_images['meta'].keys():
           meta["img_idx"] = pre_processed_images['meta']["img_idx"].numpy().astype(np.int32)[0]
       images = images.to(self.opt.device)
-      torch.cuda.synchronize()
+      self._sync_cuda()
       pre_process_time = time.time()
       pre_time += pre_process_time - scale_start_time
 
@@ -149,7 +153,7 @@ class BaseDetector(object):
       # process      
       output, dets, forward_time = self.process(images, return_time=True)
 
-      torch.cuda.synchronize()
+      self._sync_cuda()
       net_time += forward_time - pre_process_time
       decode_time = time.time()
       dec_time += decode_time - forward_time
@@ -159,7 +163,7 @@ class BaseDetector(object):
 
       # post process 
       dets = self.post_process(dets, meta, scale)
-      torch.cuda.synchronize()
+      self._sync_cuda()
       post_process_time = time.time()
       post_time += post_process_time - decode_time
 
@@ -167,7 +171,7 @@ class BaseDetector(object):
 
     # merge multiscale detection to get the final results. 
     results = self.merge_outputs(detections)
-    torch.cuda.synchronize()
+    self._sync_cuda()
     end_time = time.time()
     merge_time += end_time - post_process_time
     tot_time += end_time - start_time

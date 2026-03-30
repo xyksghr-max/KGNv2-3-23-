@@ -275,6 +275,14 @@ class opts(object):
         self.parser.add_argument('--vis_results', action="store_true",
                                  help="Visualize the detection results. Will show (a) The scene with the object, grasps, and the camera."
                                  "(b) camera view of the scene with the grasps.")
+        self.parser.add_argument('--save_analysis', action="store_true",
+                                 help="Save non-intrusive test-time analysis artifacts, including per-image stats and summaries.")
+        self.parser.add_argument('--analysis_tag', type=str, default='',
+                                 help="Optional suffix for the analysis output directory name.")
+        self.parser.add_argument('--analysis_save_kpt_vis', action="store_true",
+                                 help="Save 2D keypoint overlays for predictions and GT during analysis.")
+        self.parser.add_argument('--analysis_vis_limit', type=int, default=20,
+                                 help="Maximum number of images for which analysis keypoint visualizations are saved. Negative means no limit.")
         self.parser.add_argument('--rot_sample_num', type=int, default=-1,
                                  help="The number of rotation samples for the evaluation. If both this and the trl_sample_num are None, "
                                  "will load the stored grasps from the dataset")
@@ -387,6 +395,11 @@ class opts(object):
         opt.exp_dir = os.path.join(opt.root_dir, 'exp', opt.task)
         opt.save_dir = os.path.join(opt.exp_dir, opt.exp_id)
         opt.debug_dir = os.path.join(opt.save_dir, 'debug')
+        analysis_name = 'analysis'
+        if opt.analysis_tag.strip():
+            analysis_name = '{}_{}'.format(analysis_name, opt.analysis_tag.strip())
+        opt.analysis_dir = os.path.join(opt.save_dir, analysis_name)
+        opt.analysis_vis_dir = os.path.join(opt.analysis_dir, 'kpt_vis')
         print('The output will be saved to ', opt.save_dir)
 
         if opt.resume and opt.load_model == '':

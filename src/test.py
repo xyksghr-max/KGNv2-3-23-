@@ -15,6 +15,13 @@ import torch
 from opts import opts
 from logger import Logger
 from utils.keypoints import kpts_3d_to_2d, plot_grasps_kpts
+from utils.analysis import (
+    array_stats,
+    prepare_analysis_dirs,
+    save_csv,
+    save_json,
+    summarize_records,
+)
 from utils.utils import AverageMeter
 from utils.vis import construct_scene_with_grasp_preds
 from datasets.dataset_factory import dataset_factory
@@ -139,13 +146,20 @@ def test(opt):
     
     # dataloader that utilizes the detector's preprocess function
     set_for_loader = PrefetchDatasetGrasp(opt, dataset, detector.pre_process)
+    loader_num_workers = max(0, int(opt.num_workers))
+    loader_pin_memory = opt.gpus[0] >= 0
         
     data_loader = torch.utils.data.DataLoader(
         set_for_loader,
-        batch_size=1, shuffle=False, num_workers=1, pin_memory=True)
+        batch_size=1, shuffle=False, num_workers=loader_num_workers, pin_memory=loader_pin_memory)
 
 
     results = {}
+    analysis_records = {}
+    analysis_dirs = None
+    saved_vis_num = 0
+    if opt.save_analysis:
+        analysis_dirs = prepare_analysis_dirs(opt.analysis_dir, save_kpt_vis=opt.analysis_save_kpt_vis)
     num_iters = len(dataset)
     bar = Bar('{}'.format(opt.exp_id), max=num_iters)
     time_stats = ['tot', 'load', 'pre', 'net', 'dec', 'post', 'merge']
@@ -199,7 +213,13 @@ def test(opt):
         time_start = time.time()
 
         # apply KGN
-        quaternions, locations, widths, kpts_2d_pred, scores = kgn.generate(oracle_dets_or_pre_processed_images)
+        if opt.save_analysis:
+            quaternions, locations, widths, kpts_2d_pred, scores, reproj_errors, centers_keep, analysis_meta = \
+                kgn.generate(oracle_dets_or_pre_processed_images, return_all=True)
+        else:
+            quaternions, locations, widths, kpts_2d_pred, scores = kgn.generate(oracle_dets_or_pre_processed_images)
+            reproj_errors = np.array([], dtype=np.float32)
+            analysis_meta = None
         
 
         Bar.suffix = '[{0}/{1}]|Tot: {total:} |ETA: {eta:} '.format(
@@ -219,10 +239,63 @@ def test(opt):
         results_this["quaternions"] = np.array(quaternions)
         results_this['widths'] = np.array(widths) #* 3
         results[img_id.numpy().astype(np.int32)[0]] = results_this
+        img_id_int = img_id.numpy().astype(np.int32)[0]
+
+        if opt.save_analysis:
+            accepted_scales = analysis_meta["accepted_scales"] if opt.scale_kpts_mode else []
+            analysis_records[img_id_int] = {
+                "img_id": img_id_int,
+                "scene_idx": int(scene_idx),
+                "camera_idx": int(cam_idx),
+                "obj_types": [str(obj_type) for obj_type in obj_types],
+                "num_objects": len(obj_types),
+                "decoded_candidates": int(analysis_meta["decoded_candidates"]),
+                "score_filtered_candidates": int(analysis_meta["score_filtered_candidates"]),
+                "pnp_attempted": int(analysis_meta["pnp_attempted"]),
+                "pnp_failed": int(analysis_meta["pnp_failed"]),
+                "scale_refine_failed": int(analysis_meta["scale_refine_failed"]),
+                "reproj_filtered": int(analysis_meta["reproj_filtered"]),
+                "accepted_candidates": int(analysis_meta["accepted_candidates"]),
+                "accepted_ratio": (
+                    float(analysis_meta["accepted_candidates"] / analysis_meta["score_filtered_candidates"])
+                    if analysis_meta["score_filtered_candidates"] > 0 else None
+                ),
+                "accepted_score_stats": array_stats(scores),
+                "accepted_reprojection_error_stats": array_stats(reproj_errors),
+                "accepted_scale_stats": array_stats(accepted_scales),
+                "accepted_scores": np.asarray(scores, dtype=np.float32),
+                "accepted_reprojection_errors": np.asarray(reproj_errors, dtype=np.float32),
+                "accepted_scales": np.asarray(accepted_scales, dtype=np.float32),
+            }
+
+            if opt.analysis_save_kpt_vis and (
+                opt.analysis_vis_limit < 0 or saved_vis_num < opt.analysis_vis_limit
+            ):
+                img_path = dataset.images[img_id_int]
+                color = cv2.imread(img_path)
+                color = cv2.cvtColor(color, cv2.COLOR_BGR2RGB)
+                img_kpts_pred = plot_grasps_kpts(color, kpts_2d_pred, kpts_mode=opt.kpt_type, size=5)
+                cv2.imwrite(
+                    os.path.join(analysis_dirs["kpt_vis"], '{}_pred.png'.format(img_id_int)),
+                    img_kpts_pred[:, :, ::-1]
+                )
+
+                _, kpts_2d_gt, _ = dataset._get_gt_grasps(
+                    scene_idx, cam_idx, filter_collides=True,
+                    center_proj=False,
+                    correct_rl=True
+                )
+                kpts_2d_gt = np.concatenate(kpts_2d_gt, axis=0)
+                img_kpts_gt = plot_grasps_kpts(color, kpts_2d_gt, kpts_mode=opt.kpt_type, size=5)
+                cv2.imwrite(
+                    os.path.join(analysis_dirs["kpt_vis"], '{}_gt.png'.format(img_id_int)),
+                    img_kpts_gt[:, :, ::-1]
+                )
+                saved_vis_num += 1
 
         # visualize results
         if opt.vis_results or opt.debug == 5:
-            img_id = img_id.numpy().astype(np.int32)[0]
+            img_id = img_id_int
 
             # sample color
             obj_color = [np.random.choice(range(256), size=3) for _ in range(len(obj_types))]
@@ -332,8 +405,66 @@ def test(opt):
         bar.next()
     bar.finish()
     print("\n The average time taken: {:4f} SPF ({:4f} FPS). ".format(total_avg_timer.avg, 1./total_avg_timer.avg))
-    dataset.run_eval(results, opt.save_dir, angle_th=opt.angle_th, dist_th=opt.dist_th, \
+    eval_results = dataset.run_eval(results, opt.save_dir, angle_th=opt.angle_th, dist_th=opt.dist_th, \
         rot_sample=opt.rot_sample_num, trl_sample=opt.trl_sample_num)
+
+    if opt.save_analysis:
+        for img_id_int, pred_succ in eval_results.items():
+            pred_succ = np.asarray(pred_succ, dtype=bool)
+            if img_id_int not in analysis_records:
+                continue
+            analysis_records[img_id_int]["eval_prediction_count"] = int(pred_succ.size)
+            analysis_records[img_id_int]["eval_successful_prediction_count"] = int(pred_succ.sum())
+            analysis_records[img_id_int]["eval_any_success"] = bool(pred_succ.any())
+
+        ordered_records = [analysis_records[key] for key in sorted(analysis_records.keys())]
+        for record in ordered_records:
+            save_json(
+                os.path.join(analysis_dirs["images"], '{}.json'.format(record["img_id"])),
+                record
+            )
+
+        csv_rows = []
+        for record in ordered_records:
+            csv_rows.append({
+                "img_id": record["img_id"],
+                "scene_idx": record["scene_idx"],
+                "camera_idx": record["camera_idx"],
+                "num_objects": record["num_objects"],
+                "decoded_candidates": record["decoded_candidates"],
+                "score_filtered_candidates": record["score_filtered_candidates"],
+                "pnp_attempted": record["pnp_attempted"],
+                "pnp_failed": record["pnp_failed"],
+                "scale_refine_failed": record["scale_refine_failed"],
+                "reproj_filtered": record["reproj_filtered"],
+                "accepted_candidates": record["accepted_candidates"],
+                "accepted_ratio": record["accepted_ratio"],
+                "accepted_score_mean": record["accepted_score_stats"]["mean"],
+                "accepted_reproj_mean": record["accepted_reprojection_error_stats"]["mean"],
+                "accepted_scale_mean": record["accepted_scale_stats"]["mean"],
+                "eval_successful_prediction_count": record.get("eval_successful_prediction_count", 0),
+                "eval_any_success": record.get("eval_any_success", False),
+            })
+
+        save_csv(
+            os.path.join(analysis_dirs["base"], 'image_stats.csv'),
+            csv_rows,
+            [
+                "img_id", "scene_idx", "camera_idx", "num_objects",
+                "decoded_candidates", "score_filtered_candidates",
+                "pnp_attempted", "pnp_failed", "scale_refine_failed",
+                "reproj_filtered", "accepted_candidates", "accepted_ratio",
+                "accepted_score_mean", "accepted_reproj_mean",
+                "accepted_scale_mean", "eval_successful_prediction_count",
+                "eval_any_success",
+            ]
+        )
+        summary = summarize_records(ordered_records, total_avg_timer.avg)
+        summary["analysis_dir"] = opt.analysis_dir
+        summary["saved_kpt_visualizations"] = saved_vis_num
+        summary["test_num_images"] = len(ordered_records)
+        summary["save_dir"] = opt.save_dir
+        save_json(os.path.join(analysis_dirs["base"], 'summary.json'), summary)
 
 
 if __name__ == '__main__':
