@@ -121,3 +121,49 @@ def summarize_records(records, avg_spf):
     summary["accepted_scale_stats"] = array_stats(scale_pool)
     return summary
 
+
+def classify_failure_reason(record):
+    accepted_candidates = int(record.get("accepted_candidates", 0) or 0)
+    eval_successful_prediction_count = int(record.get("eval_successful_prediction_count", 0) or 0)
+    score_filtered_candidates = int(record.get("score_filtered_candidates", 0) or 0)
+    pnp_attempted = int(record.get("pnp_attempted", 0) or 0)
+    pnp_failed = int(record.get("pnp_failed", 0) or 0)
+    scale_refine_failed = int(record.get("scale_refine_failed", 0) or 0)
+    reproj_filtered = int(record.get("reproj_filtered", 0) or 0)
+
+    if accepted_candidates <= 0:
+        if score_filtered_candidates <= 0:
+            return "no_score_pass"
+        if pnp_attempted > 0 and pnp_failed >= pnp_attempted:
+            return "all_pnp_fail"
+        if scale_refine_failed > 0 and accepted_candidates <= 0:
+            return "all_scale_refine_fail"
+        if reproj_filtered > 0 and accepted_candidates <= 0:
+            return "all_reproj_filtered"
+        return "no_prediction_after_filter"
+
+    if eval_successful_prediction_count > 0:
+        return "has_eval_success"
+    return "predicted_but_eval_failed"
+
+
+def summarize_records_by_shape(records, avg_spf):
+    grouped = {}
+    for record in records:
+        shapes = record.get("obj_types", [])
+        if not shapes:
+            shapes = ["unknown"]
+        for shape in shapes:
+            grouped.setdefault(shape, []).append(record)
+
+    summaries = []
+    for shape, shape_records in sorted(grouped.items()):
+        shape_summary = summarize_records(shape_records, avg_spf)
+        failure_reason_counts = {}
+        for record in shape_records:
+            failure_reason = record.get("failure_reason", "unknown")
+            failure_reason_counts[failure_reason] = failure_reason_counts.get(failure_reason, 0) + 1
+        shape_summary["shape"] = shape
+        shape_summary["failure_reason_counts"] = failure_reason_counts
+        summaries.append(shape_summary)
+    return summaries

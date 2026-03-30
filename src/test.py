@@ -17,9 +17,11 @@ from logger import Logger
 from utils.keypoints import kpts_3d_to_2d, plot_grasps_kpts
 from utils.analysis import (
     array_stats,
+    classify_failure_reason,
     prepare_analysis_dirs,
     save_csv,
     save_json,
+    summarize_records_by_shape,
     summarize_records,
 )
 from utils.utils import AverageMeter
@@ -248,6 +250,7 @@ def test(opt):
                 "scene_idx": int(scene_idx),
                 "camera_idx": int(cam_idx),
                 "obj_types": [str(obj_type) for obj_type in obj_types],
+                "primary_shape": str(obj_types[0]) if len(obj_types) > 0 else "unknown",
                 "num_objects": len(obj_types),
                 "decoded_candidates": int(analysis_meta["decoded_candidates"]),
                 "score_filtered_candidates": int(analysis_meta["score_filtered_candidates"]),
@@ -416,6 +419,9 @@ def test(opt):
             analysis_records[img_id_int]["eval_prediction_count"] = int(pred_succ.size)
             analysis_records[img_id_int]["eval_successful_prediction_count"] = int(pred_succ.sum())
             analysis_records[img_id_int]["eval_any_success"] = bool(pred_succ.any())
+            analysis_records[img_id_int]["failure_reason"] = classify_failure_reason(
+                analysis_records[img_id_int]
+            )
 
         ordered_records = [analysis_records[key] for key in sorted(analysis_records.keys())]
         for record in ordered_records:
@@ -430,6 +436,7 @@ def test(opt):
                 "img_id": record["img_id"],
                 "scene_idx": record["scene_idx"],
                 "camera_idx": record["camera_idx"],
+                "primary_shape": record["primary_shape"],
                 "num_objects": record["num_objects"],
                 "decoded_candidates": record["decoded_candidates"],
                 "score_filtered_candidates": record["score_filtered_candidates"],
@@ -444,27 +451,79 @@ def test(opt):
                 "accepted_scale_mean": record["accepted_scale_stats"]["mean"],
                 "eval_successful_prediction_count": record.get("eval_successful_prediction_count", 0),
                 "eval_any_success": record.get("eval_any_success", False),
+                "failure_reason": record.get("failure_reason", "unknown"),
             })
 
         save_csv(
             os.path.join(analysis_dirs["base"], 'image_stats.csv'),
             csv_rows,
             [
-                "img_id", "scene_idx", "camera_idx", "num_objects",
+                "img_id", "scene_idx", "camera_idx", "primary_shape", "num_objects",
                 "decoded_candidates", "score_filtered_candidates",
                 "pnp_attempted", "pnp_failed", "scale_refine_failed",
                 "reproj_filtered", "accepted_candidates", "accepted_ratio",
                 "accepted_score_mean", "accepted_reproj_mean",
                 "accepted_scale_mean", "eval_successful_prediction_count",
-                "eval_any_success",
+                "eval_any_success", "failure_reason",
             ]
         )
         summary = summarize_records(ordered_records, total_avg_timer.avg)
+        failure_reason_counts = {}
+        for record in ordered_records:
+            failure_reason = record.get("failure_reason", "unknown")
+            failure_reason_counts[failure_reason] = failure_reason_counts.get(failure_reason, 0) + 1
+        summary["failure_reason_counts"] = failure_reason_counts
         summary["analysis_dir"] = opt.analysis_dir
         summary["saved_kpt_visualizations"] = saved_vis_num
         summary["test_num_images"] = len(ordered_records)
         summary["save_dir"] = opt.save_dir
         save_json(os.path.join(analysis_dirs["base"], 'summary.json'), summary)
+
+        shape_summaries = summarize_records_by_shape(ordered_records, total_avg_timer.avg)
+        save_json(os.path.join(analysis_dirs["base"], 'shape_summary.json'), shape_summaries)
+
+        shape_csv_rows = []
+        for shape_summary in shape_summaries:
+            shape_csv_rows.append({
+                "shape": shape_summary["shape"],
+                "num_images": shape_summary["num_images"],
+                "decoded_candidates_total": shape_summary["decoded_candidates_total"],
+                "score_filtered_candidates_total": shape_summary["score_filtered_candidates_total"],
+                "pnp_attempted_total": shape_summary["pnp_attempted_total"],
+                "pnp_failed_total": shape_summary["pnp_failed_total"],
+                "scale_refine_failed_total": shape_summary["scale_refine_failed_total"],
+                "reproj_filtered_total": shape_summary["reproj_filtered_total"],
+                "accepted_candidates_total": shape_summary["accepted_candidates_total"],
+                "images_with_any_prediction": shape_summary["images_with_any_prediction"],
+                "images_with_any_eval_success": shape_summary["images_with_any_eval_success"],
+                "accepted_ratio_vs_score_filtered": shape_summary["accepted_ratio_vs_score_filtered"],
+                "accepted_score_mean": shape_summary["accepted_score_stats"]["mean"],
+                "accepted_reproj_mean": shape_summary["accepted_reprojection_error_stats"]["mean"],
+                "accepted_scale_mean": shape_summary["accepted_scale_stats"]["mean"],
+                "failure_reason_counts": shape_summary["failure_reason_counts"],
+            })
+        save_csv(
+            os.path.join(analysis_dirs["base"], 'shape_stats.csv'),
+            shape_csv_rows,
+            [
+                "shape",
+                "num_images",
+                "decoded_candidates_total",
+                "score_filtered_candidates_total",
+                "pnp_attempted_total",
+                "pnp_failed_total",
+                "scale_refine_failed_total",
+                "reproj_filtered_total",
+                "accepted_candidates_total",
+                "images_with_any_prediction",
+                "images_with_any_eval_success",
+                "accepted_ratio_vs_score_filtered",
+                "accepted_score_mean",
+                "accepted_reproj_mean",
+                "accepted_scale_mean",
+                "failure_reason_counts",
+            ]
+        )
 
 
 if __name__ == '__main__':
