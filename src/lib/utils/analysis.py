@@ -91,6 +91,7 @@ def summarize_records(records, avg_spf):
     reproj_pool = []
     score_pool = []
     scale_pool = []
+    confidence_pool = []
 
     for record in records:
         summary["decoded_candidates_total"] += record.get("decoded_candidates", 0)
@@ -110,6 +111,7 @@ def summarize_records(records, avg_spf):
         reproj_pool.extend(record.get("accepted_reprojection_errors", []))
         score_pool.extend(record.get("accepted_scores", []))
         scale_pool.extend(record.get("accepted_scales", []))
+        confidence_pool.extend(record.get("accepted_confidences", []))
 
     score_filtered_total = summary["score_filtered_candidates_total"]
     summary["accepted_ratio_vs_score_filtered"] = (
@@ -119,6 +121,7 @@ def summarize_records(records, avg_spf):
     summary["accepted_reprojection_error_stats"] = array_stats(reproj_pool)
     summary["accepted_score_stats"] = array_stats(score_pool)
     summary["accepted_scale_stats"] = array_stats(scale_pool)
+    summary["accepted_confidence_stats"] = array_stats(confidence_pool)
     return summary
 
 

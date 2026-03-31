@@ -315,6 +315,10 @@ class opts(object):
                                  help="Use a lightweight confidence/uncertainty branch.")
         self.parser.add_argument('--conf_weight', type=float, default=0,
                                  help="The weight for confidence/uncertainty loss.")
+        self.parser.add_argument('--conf_fusion', action="store_true",
+                                 help="Use the confidence branch during inference to fuse a confidence-aware ranking score.")
+        self.parser.add_argument('--conf_fusion_alpha', type=float, default=0.3,
+                                 help="Fusion weight for confidence-aware ranking. final_score=(1-alpha)*center_score+alpha*confidence.")
         self.parser.add_argument('--scale_kpts_mode', type=int, default=0,
                                 help="Scaled keypoints mode. 0 for No and 1 for yes")
         self.parser.add_argument('--scale_coeff_k', type=float, default=1,

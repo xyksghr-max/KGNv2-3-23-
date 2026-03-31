@@ -156,7 +156,7 @@ def _topk(scores, K=40):
 
 def grasp_pose_decode(
         opt,
-        heat, w, kps, reg=None, hm_kpts=None, kpts_offset=None, scales=None, K=100):
+        heat, w, kps, reg=None, hm_kpts=None, kpts_offset=None, scales=None, conf=None, K=100):
     """Decode and reorganize the network output.
     It will produce the following for the top candidates:
     (1) 2d keypoint projections indicating the grasp pose
@@ -185,7 +185,8 @@ def grasp_pose_decode(
     batch, cls_num, height, width = heat.size()
     num_kpts = kps.shape[1] // (2 * cls_num)
 
-    centers, kps, w, scores, clses, scls = _center_branch_decode_ori(opt, heat, w, kps, reg, K=K, scales=scales)
+    centers, kps, w, scores, clses, scls, conf_quality, rank_scores = \
+        _center_branch_decode_ori(opt, heat, w, kps, reg, K=K, scales=scales, conf=conf)
     
     # =========== The keypoint refinement branch ========================
     # NOTE: Currently it is done by select the topk kpts per channel and filter with a  threshold,
@@ -241,14 +242,16 @@ def grasp_pose_decode(
             batch, K, num_kpts * 2)
     
     # collect
+    det_parts = [centers, kps, w, scores, clses]
     if opt.sep_scale_branch:
-        detections = torch.cat([centers, kps, w, scores, clses, scls], dim=2)
-    else:
-        detections = torch.cat([centers, kps, w, scores, clses], dim=2)
+        det_parts.append(scls)
+    if conf_quality is not None:
+        det_parts.extend([conf_quality, rank_scores])
+    detections = torch.cat(det_parts, dim=2)
 
     return detections
 
-def _center_branch_decode_ori(opt, heat, w, kps, reg, scales=None, K=100):
+def _center_branch_decode_ori(opt, heat, w, kps, reg, scales=None, conf=None, K=100):
     """Get the top-K candidate keypoint sets from the center branch
 
     Args:
@@ -266,6 +269,8 @@ def _center_branch_decode_ori(opt, heat, w, kps, reg, scales=None, K=100):
         scores (b, K, 1)
         clses (b, K, 1). Should be all zero here
         scales (b, K, 1)
+        conf_quality (b, K, 1)
+        rank_scores (b, K, 1)
     """
     batch, cls_num, height, width = heat.size()
     num_kpts = kps.shape[1] // (2 * cls_num)
@@ -288,6 +293,18 @@ def _center_branch_decode_ori(opt, heat, w, kps, reg, scales=None, K=100):
         scales = scales.view(batch, K, 1)
     else:
         scales = None
+
+    # get confidence at the center points of corresponding orientation class
+    if conf is not None:
+        conf = _transpose_and_gather_feat(conf, inds)
+        conf = _gather_feat(
+            conf.view(batch * K, cls_num, 1),
+            clses.view(batch * K, 1).long()
+        )
+        conf = conf.view(batch, K, 1)
+        conf_quality = torch.sigmoid(-conf)
+    else:
+        conf_quality = None
 
     # the keypoint locations from the center point for the orientation class
     kps = _transpose_and_gather_feat(kps, inds) # (b, k, 2*num_kpts*ori_cls)
@@ -321,5 +338,9 @@ def _center_branch_decode_ori(opt, heat, w, kps, reg, scales=None, K=100):
 
     clses = clses.view(batch, K, 1).float()
     scores = scores.view(batch, K, 1)
+    if conf_quality is not None and opt.conf_fusion:
+        rank_scores = (1.0 - opt.conf_fusion_alpha) * scores + opt.conf_fusion_alpha * conf_quality
+    else:
+        rank_scores = scores
 
-    return centers, kps, w, scores, clses, scales
+    return centers, kps, w, scores, clses, scales, conf_quality, rank_scores

@@ -245,6 +245,7 @@ def test(opt):
 
         if opt.save_analysis:
             accepted_scales = analysis_meta["accepted_scales"] if opt.scale_kpts_mode else []
+            accepted_confidences = analysis_meta.get("accepted_confidences", []) if opt.conf_branch else []
             analysis_records[img_id_int] = {
                 "img_id": img_id_int,
                 "scene_idx": int(scene_idx),
@@ -266,9 +267,11 @@ def test(opt):
                 "accepted_score_stats": array_stats(scores),
                 "accepted_reprojection_error_stats": array_stats(reproj_errors),
                 "accepted_scale_stats": array_stats(accepted_scales),
+                "accepted_confidence_stats": array_stats(accepted_confidences),
                 "accepted_scores": np.asarray(scores, dtype=np.float32),
                 "accepted_reprojection_errors": np.asarray(reproj_errors, dtype=np.float32),
                 "accepted_scales": np.asarray(accepted_scales, dtype=np.float32),
+                "accepted_confidences": np.asarray(accepted_confidences, dtype=np.float32),
             }
 
             if opt.analysis_save_kpt_vis and (
@@ -449,6 +452,7 @@ def test(opt):
                 "accepted_score_mean": record["accepted_score_stats"]["mean"],
                 "accepted_reproj_mean": record["accepted_reprojection_error_stats"]["mean"],
                 "accepted_scale_mean": record["accepted_scale_stats"]["mean"],
+                "accepted_confidence_mean": record["accepted_confidence_stats"]["mean"],
                 "eval_successful_prediction_count": record.get("eval_successful_prediction_count", 0),
                 "eval_any_success": record.get("eval_any_success", False),
                 "failure_reason": record.get("failure_reason", "unknown"),
@@ -463,7 +467,8 @@ def test(opt):
                 "pnp_attempted", "pnp_failed", "scale_refine_failed",
                 "reproj_filtered", "accepted_candidates", "accepted_ratio",
                 "accepted_score_mean", "accepted_reproj_mean",
-                "accepted_scale_mean", "eval_successful_prediction_count",
+                "accepted_scale_mean", "accepted_confidence_mean",
+                "eval_successful_prediction_count",
                 "eval_any_success", "failure_reason",
             ]
         )
@@ -500,6 +505,7 @@ def test(opt):
                 "accepted_score_mean": shape_summary["accepted_score_stats"]["mean"],
                 "accepted_reproj_mean": shape_summary["accepted_reprojection_error_stats"]["mean"],
                 "accepted_scale_mean": shape_summary["accepted_scale_stats"]["mean"],
+                "accepted_confidence_mean": shape_summary["accepted_confidence_stats"]["mean"],
                 "failure_reason_counts": shape_summary["failure_reason_counts"],
             })
         save_csv(
@@ -521,6 +527,7 @@ def test(opt):
                 "accepted_score_mean",
                 "accepted_reproj_mean",
                 "accepted_scale_mean",
+                "accepted_confidence_mean",
                 "failure_reason_counts",
             ]
         )

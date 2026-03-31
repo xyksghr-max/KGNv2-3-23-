@@ -62,11 +62,12 @@ class KeypointGraspNet():
 
         # generate the keypoints
         if not self.opt.test_oracle_kpts:
-            kpts, centers, widths_gen, scales, scores, detect_stats = self._generate_kpts(detector_input)
+            kpts, centers, widths_gen, scales, scores, confidences, detect_stats = self._generate_kpts(detector_input)
         else:
             kpts, centers, widths_gen = self._generate_kpts_gt(detector_input)
             scales = None
             scores = np.array([], dtype=np.float32)
+            confidences = np.array([], dtype=np.float32)
             detect_stats = {
                 "decoded_candidates": int(kpts.shape[0]),
                 "score_filtered_candidates": int(kpts.shape[0]),
@@ -92,6 +93,7 @@ class KeypointGraspNet():
             "reproj_filtered": 0,
             "accepted_candidates": 0,
             "accepted_scores": [],
+            "accepted_confidences": [],
             "accepted_reprojection_errors": [],
             "accepted_scales": [],
         }
@@ -159,6 +161,8 @@ class KeypointGraspNet():
                 kpts_keep.append(kpts[i, :, :])
                 reproj_errors.append(reprojectionError)
                 centers_keep.append(centers[i])
+                if confidences.size > 0:
+                    analysis["accepted_confidences"].append(confidences[i])
                 if self.opt.scale_kpts_mode:
                     scales_keep.append(scale)
                     analysis["accepted_scales"].append(scale)
@@ -191,26 +195,41 @@ class KeypointGraspNet():
             empty_kpts = np.zeros((0, 4, 2), dtype=np.float32)
             empty_centers = np.zeros((0, 1, 2), dtype=np.float32)
             empty_scores = np.zeros((0,), dtype=np.float32)
+            empty_confidences = np.zeros((0,), dtype=np.float32)
             empty_widths = np.zeros((0,), dtype=np.float32)
             detect_stats = {
                 "decoded_candidates": 0,
                 "score_filtered_candidates": 0,
             }
             if self.opt.sep_scale_branch:
-                return empty_kpts, empty_centers, empty_widths, np.zeros((0,), dtype=np.float32), empty_scores, detect_stats
-            return empty_kpts, empty_centers, empty_widths, None, empty_scores, detect_stats
+                return empty_kpts, empty_centers, empty_widths, np.zeros((0,), dtype=np.float32), empty_scores, empty_confidences, detect_stats
+            return empty_kpts, empty_centers, empty_widths, None, empty_scores, empty_confidences, detect_stats
 
         kpts_2d_pred = dets[:, 2:10].reshape(-1, 4, 2)
         centers_2d_pred = dets[:, :2].reshape(-1, 1, 2)
         widths_pred = dets[:, 10]
-            
+        raw_scores = dets[:, 11]
+        next_col = 13
+        if self.opt.sep_scale_branch:
+            scales = dets[:, next_col]
+            next_col += 1
+        else:
+            scales = None
+        if self.opt.conf_branch and dets.shape[1] >= next_col + 2:
+            confidences = dets[:, next_col]
+            rank_scores = dets[:, next_col + 1]
+        else:
+            confidences = np.zeros((dets.shape[0],), dtype=np.float32)
+            rank_scores = raw_scores
+
         # filter by scores
-        scores = dets[:, 11]
+        scores = rank_scores
         score_mask = scores > self.opt.center_thresh
         kpts_2d_pred = kpts_2d_pred[score_mask]
         widths_pred = widths_pred[score_mask]
         centers_2d_pred = centers_2d_pred[score_mask]
         scores = scores[score_mask]
+        confidences = confidences[score_mask]
         detect_stats = {
             "decoded_candidates": int(dets.shape[0]),
             "score_filtered_candidates": int(score_mask.sum()),
@@ -218,11 +237,10 @@ class KeypointGraspNet():
 
         # the scales
         if self.opt.sep_scale_branch:
-            scales = dets[:, 13]
             scales = scales[score_mask]
-            return kpts_2d_pred, centers_2d_pred, widths_pred, scales, scores, detect_stats
+            return kpts_2d_pred, centers_2d_pred, widths_pred, scales, scores, confidences, detect_stats
         else:
-            return kpts_2d_pred, centers_2d_pred, widths_pred, None, scores, detect_stats
+            return kpts_2d_pred, centers_2d_pred, widths_pred, None, scores, confidences, detect_stats
 
 
     def _generate_kpts_gt(self, input):

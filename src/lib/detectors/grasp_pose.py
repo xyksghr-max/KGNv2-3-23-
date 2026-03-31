@@ -59,6 +59,7 @@ class GraspPoseDetector(BaseDetector):
         scales = output["scales"]
       else:
         scales = None
+      conf = output["conf"] if self.opt.conf_branch else None
       self._sync_cuda()
       forward_time = time.time()
       
@@ -77,6 +78,7 @@ class GraspPoseDetector(BaseDetector):
         self.opt,
         output['hm'], output['w'], output['kpts_center_offset'], 
         scales = scales,
+        conf = conf,
         reg=reg, hm_kpts=hm_kpts, kpts_offset=kpts_offset, K=self.opt.K
         )
 
@@ -107,10 +109,13 @@ class GraspPoseDetector(BaseDetector):
       dets.copy(), [meta['c']], [meta['s']],
       meta['out_height'], meta['out_width'])
     for j in range(1, self.num_classes + 1):
+      extra_dim = 0
       if self.opt.sep_scale_branch:
-        dets[0][j] = np.array(dets[0][j], dtype=np.float32).reshape(-1, 2 + 2*4+1+1+1+1)
-      else:
-        dets[0][j] = np.array(dets[0][j], dtype=np.float32).reshape(-1, 2 + 2*4+1+1+1)
+        extra_dim += 1
+      if self.opt.conf_branch:
+        extra_dim += 2
+      det_dim = 2 + 2 * 4 + 1 + 1 + 1 + extra_dim
+      dets[0][j] = np.array(dets[0][j], dtype=np.float32).reshape(-1, det_dim)
       dets[0][j][:, :10] /= scale
     return dets[0]
 
@@ -171,7 +176,8 @@ class GraspPoseDetector(BaseDetector):
   def show_results(self, debugger, image, results, display=True):
     debugger.add_img(image.astype(np.uint8), img_id='grasp_pose')
     for bbox in results[1]:
-      if bbox[11] > self.opt.vis_thresh:
+      vis_score = bbox[-1] if self.opt.conf_branch else bbox[11]
+      if vis_score > self.opt.vis_thresh:
         debugger.add_ps_grasp_kpts(bbox[2:10], img_id='grasp_pose')
     if display:
       debugger.show_all_imgs(pause=self.pause)
