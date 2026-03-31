@@ -311,6 +311,10 @@ class opts(object):
                                  help="Use a separate branch to detect the scale of the grasp poses.")
         self.parser.add_argument('--scale_weight', type=float, default=10,
                                 help="The weight for scale loss.")
+        self.parser.add_argument('--conf_branch', action="store_true",
+                                 help="Use a lightweight confidence/uncertainty branch.")
+        self.parser.add_argument('--conf_weight', type=float, default=0,
+                                 help="The weight for confidence/uncertainty loss.")
         self.parser.add_argument('--scale_kpts_mode', type=int, default=0,
                                 help="Scaled keypoints mode. 0 for No and 1 for yes")
         self.parser.add_argument('--scale_coeff_k', type=float, default=1,
@@ -475,6 +479,10 @@ class opts(object):
             # scale branch
             if opt.sep_scale_branch:
                 opt.heads.update({"scales": opt.ori_num})
+
+            # lightweight confidence / uncertainty branch
+            if opt.conf_branch:
+                opt.heads.update({"conf": opt.ori_num})
             
             # unit test
             if opt.unitTest:

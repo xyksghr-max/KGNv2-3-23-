@@ -9,11 +9,49 @@ import numpy as np
 
 from models.losses import FocalLoss, RegL1Loss, RegLoss, RegWeightedL1Loss
 from models.decode import grasp_pose_decode
-from models.utils import _sigmoid, flip_tensor, flip_lr_off, flip_lr
+from models.utils import _sigmoid, flip_tensor, flip_lr_off, flip_lr, _transpose_and_gather_feat
 from utils.debugger import Debugger
 from utils.post_process import grasp_pose_post_process
 from utils.oracle_utils import gen_oracle_map
 from .base_trainer import BaseTrainer
+
+
+class ConfLoss(torch.nn.Module):
+    """Lightweight heteroscedastic confidence / uncertainty loss.
+
+    The branch predicts one scalar log-variance for each orientation class at each center.
+    In this first cut, the target signal is the detached mean absolute keypoint-center
+    offset error for the matched grasp center/orientation, so it adds confidence learning
+    without changing the main keypoint regression gradients.
+    """
+
+    def __init__(self):
+        super(ConfLoss, self).__init__()
+
+    def forward(self, conf_map, kpts_center_output, batch):
+        conf_pred = _transpose_and_gather_feat(conf_map, batch['ind'])
+        ori_clses = batch['ori_clses'].long().unsqueeze(2)
+        conf_pred = conf_pred.gather(2, ori_clses).squeeze(2)
+        conf_pred = torch.clamp(conf_pred, min=-5., max=5.)
+
+        kpts_center_pred = _transpose_and_gather_feat(kpts_center_output, batch['ind'])
+        kpts_center_target = batch['kpts_center_offset']
+        kpts_center_mask = batch['kpts_center_mask'].float()
+
+        dim_count = kpts_center_mask.sum(dim=2)
+        valid_mask = (dim_count > 0).float()
+        mean_abs_err = (
+            torch.abs(kpts_center_pred - kpts_center_target) * kpts_center_mask
+        ).sum(dim=2) / (dim_count + 1e-4)
+
+        # Only train the confidence head in this first cut.
+        mean_abs_err = mean_abs_err.detach()
+
+        loss = (torch.exp(-conf_pred) * mean_abs_err + conf_pred) * valid_mask
+        loss = loss.sum() / (valid_mask.sum() + 1e-4)
+
+        conf_mean = (conf_pred * valid_mask).sum() / (valid_mask.sum() + 1e-4)
+        return loss, conf_mean
 
 
 class GraspPoseLoss_clf(torch.nn.Module):
@@ -36,6 +74,10 @@ class GraspPoseLoss_clf(torch.nn.Module):
         # the scale loss
         if opt.sep_scale_branch:
             self.crit_scale = RegWeightedL1Loss()
+
+        # the lightweight confidence / uncertainty loss
+        if opt.conf_branch:
+            self.crit_conf = ConfLoss()
             
         """CenterNet version
         self.crit = FocalLoss()
@@ -52,6 +94,8 @@ class GraspPoseLoss_clf(torch.nn.Module):
         opt = self.opt
         hm_loss, w_loss, off_loss = 0, 0, 0
         scale_loss = 0
+        conf_loss = 0
+        conf_mean = 0
 
         kpts_center_loss, hm_kpts_loss, kpts_offset_loss = 0, 0, 0
 
@@ -111,19 +155,31 @@ class GraspPoseLoss_clf(torch.nn.Module):
                     output['scales'], batch['scales_mask'],
                     batch['ind'], batch['scales']
                 ) / opt.num_stacks
+
+            # The confidence / uncertainty loss.
+            # It learns a per-grasp scalar uncertainty from the detached keypoint regression error,
+            # so the first cut does not perturb the existing keypoint branch behavior.
+            if opt.conf_branch and opt.conf_weight > 0:
+                conf_loss_this, conf_mean_this = self.crit_conf(
+                    output['conf'], output['kpts_center_offset'], batch
+                )
+                conf_loss += conf_loss_this / opt.num_stacks
+                conf_mean += conf_mean_this / opt.num_stacks
                 
         
 
         loss = opt.hm_weight * hm_loss + opt.w_weight * w_loss + \
             opt.off_weight * off_loss + opt.kpts_center_weight * kpts_center_loss + \
             opt.hm_kpts_weight * hm_kpts_loss + opt.off_weight * kpts_offset_loss + \
-            opt.scale_weight * scale_loss
+            opt.scale_weight * scale_loss + opt.conf_weight * conf_loss
         
         
         loss_stats = {'loss': loss, 'hm_loss': hm_loss, 'w_loss': w_loss,
                     'kpts_center_loss': kpts_center_loss,'reg_loss(center_offset)': off_loss,
                     'hm_kpts_loss': hm_kpts_loss, 'kpts_offset_loss': kpts_offset_loss,
-                    "scale_loss": scale_loss
+                    "scale_loss": scale_loss,
+                    "conf_loss": conf_loss,
+                    "conf_mean": conf_mean
                     }
 
                        
@@ -146,6 +202,10 @@ class GraspPoseTrainer(BaseTrainer):
         # The scale loss
         if self.opt.sep_scale_branch:
             loss_states.append("scale_loss")
+
+        if self.opt.conf_branch:
+            loss_states.append("conf_loss")
+            loss_states.append("conf_mean")
 
         loss = GraspPoseLoss_clf(opt)
         return loss_states, loss
