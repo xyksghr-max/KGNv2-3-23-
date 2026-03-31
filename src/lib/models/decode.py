@@ -339,7 +339,12 @@ def _center_branch_decode_ori(opt, heat, w, kps, reg, scales=None, conf=None, K=
     clses = clses.view(batch, K, 1).float()
     scores = scores.view(batch, K, 1)
     if conf_quality is not None and opt.conf_fusion:
-        rank_scores = (1.0 - opt.conf_fusion_alpha) * scores + opt.conf_fusion_alpha * conf_quality
+        fused_scores = (1.0 - opt.conf_fusion_alpha) * scores + opt.conf_fusion_alpha * conf_quality
+        if getattr(opt, "conf_fusion_min_conf", 0.0) > 0:
+            conf_gate = (conf_quality >= opt.conf_fusion_min_conf).float()
+            rank_scores = conf_gate * fused_scores + (1.0 - conf_gate) * scores
+        else:
+            rank_scores = fused_scores
     else:
         rank_scores = scores
 
