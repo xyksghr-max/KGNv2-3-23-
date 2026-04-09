@@ -312,9 +312,9 @@ class opts(object):
         self.parser.add_argument('--scale_weight', type=float, default=10,
                                 help="The weight for scale loss.")
         self.parser.add_argument('--conf_branch', action="store_true",
-                                 help="Use a lightweight confidence/uncertainty branch.")
+                                 help="Use a lightweight geometry-aware confidence/uncertainty branch.")
         self.parser.add_argument('--conf_weight', type=float, default=0,
-                                 help="The weight for confidence/uncertainty loss.")
+                                 help="The weight for the geometry-aware confidence/uncertainty loss.")
         self.parser.add_argument('--conf_fusion', action="store_true",
                                  help="Use the confidence branch during inference to fuse a confidence-aware ranking score.")
         self.parser.add_argument('--conf_fusion_alpha', type=float, default=0.3,

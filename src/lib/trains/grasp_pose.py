@@ -17,41 +17,81 @@ from .base_trainer import BaseTrainer
 
 
 class ConfLoss(torch.nn.Module):
-    """Lightweight heteroscedastic confidence / uncertainty loss.
+    """Geometry-aware heteroscedastic confidence / uncertainty loss.
 
-    The branch predicts one scalar log-variance for each orientation class at each center.
-    In this first cut, the target signal is the detached mean absolute keypoint-center
-    offset error for the matched grasp center/orientation, so it adds confidence learning
-    without changing the main keypoint regression gradients.
+    The branch still predicts one scalar log-variance for each orientation class at each
+    center. Compared with the original lightweight version, the detached supervision target
+    is no longer the raw center-to-keypoint offset error. Instead, it reconstructs the 2D
+    keypoints in the output-resolution plane and supervises confidence with the detached
+    geometry error between predicted and GT 2D correspondences for the matched grasp.
     """
 
-    def __init__(self):
+    def __init__(self, opt):
         super(ConfLoss, self).__init__()
+        self.output_res = opt.output_res
+        self.ori_num = opt.ori_num
+        if hasattr(opt, 'num_grasp_kpts'):
+            self.num_kpts = opt.num_grasp_kpts
+        else:
+            self.num_kpts = opt.heads['kpts_center_offset'] // (2 * self.ori_num)
 
-    def forward(self, conf_map, kpts_center_output, batch):
+    def _select_orientation_offsets(self, kpts_tensor, ori_clses):
+        batch_size, max_grasps = ori_clses.shape
+        kpts_tensor = kpts_tensor.view(
+            batch_size, max_grasps, self.ori_num, self.num_kpts, 2
+        )
+        gather_index = ori_clses.view(batch_size, max_grasps, 1, 1, 1).expand(
+            batch_size, max_grasps, 1, self.num_kpts, 2
+        )
+        return kpts_tensor.gather(2, gather_index).squeeze(2)
+
+    def forward(self, conf_map, reg_map, kpts_center_output, batch):
         conf_pred = _transpose_and_gather_feat(conf_map, batch['ind'])
         ori_clses = batch['ori_clses'].long().unsqueeze(2)
         conf_pred = conf_pred.gather(2, ori_clses).squeeze(2)
         conf_pred = torch.clamp(conf_pred, min=-5., max=5.)
 
+        ct_int_x = (batch['ind'] % self.output_res).float()
+        ct_int_y = torch.div(batch['ind'], self.output_res, rounding_mode='floor').float()
+        ct_int = torch.stack([ct_int_x, ct_int_y], dim=2)
+
+        if reg_map is not None and 'reg' in batch:
+            reg_pred = _transpose_and_gather_feat(reg_map, batch['ind'])
+            reg_gt = batch['reg']
+        else:
+            reg_pred = torch.zeros_like(ct_int)
+            reg_gt = torch.zeros_like(ct_int)
+
+        center_pred = ct_int + reg_pred
+        center_gt = ct_int + reg_gt
+
         kpts_center_pred = _transpose_and_gather_feat(kpts_center_output, batch['ind'])
         kpts_center_target = batch['kpts_center_offset']
         kpts_center_mask = batch['kpts_center_mask'].float()
 
-        dim_count = kpts_center_mask.sum(dim=2)
-        valid_mask = (dim_count > 0).float()
-        mean_abs_err = (
-            torch.abs(kpts_center_pred - kpts_center_target) * kpts_center_mask
-        ).sum(dim=2) / (dim_count + 1e-4)
+        ori_clses_flat = batch['ori_clses'].long()
+        pred_offsets = self._select_orientation_offsets(kpts_center_pred, ori_clses_flat)
+        target_offsets = self._select_orientation_offsets(kpts_center_target, ori_clses_flat)
+        offset_mask = self._select_orientation_offsets(kpts_center_mask, ori_clses_flat).float()
 
-        # Only train the confidence head in this first cut.
-        mean_abs_err = mean_abs_err.detach()
+        kpt_pred = center_pred.unsqueeze(2) + pred_offsets
+        kpt_gt = center_gt.unsqueeze(2) + target_offsets
 
-        loss = (torch.exp(-conf_pred) * mean_abs_err + conf_pred) * valid_mask
+        coord_valid_count = offset_mask.sum(dim=(2, 3))
+        valid_mask = (coord_valid_count > 0).float()
+        geom_err = (
+            torch.abs(kpt_pred - kpt_gt) * offset_mask
+        ).sum(dim=(2, 3)) / (coord_valid_count + 1e-4)
+
+        # Keep the confidence branch as an auxiliary head in this first cut.
+        geom_err = geom_err.detach()
+
+        loss = (torch.exp(-conf_pred) * geom_err + conf_pred) * valid_mask
         loss = loss.sum() / (valid_mask.sum() + 1e-4)
 
         conf_mean = (conf_pred * valid_mask).sum() / (valid_mask.sum() + 1e-4)
-        return loss, conf_mean
+        conf_geom_proxy_mean = (geom_err * valid_mask).sum() / (valid_mask.sum() + 1e-4)
+        return loss, conf_mean, conf_geom_proxy_mean
 
 
 class GraspPoseLoss_clf(torch.nn.Module):
@@ -77,7 +117,7 @@ class GraspPoseLoss_clf(torch.nn.Module):
 
         # the lightweight confidence / uncertainty loss
         if opt.conf_branch:
-            self.crit_conf = ConfLoss()
+            self.crit_conf = ConfLoss(opt)
             
         """CenterNet version
         self.crit = FocalLoss()
@@ -96,6 +136,7 @@ class GraspPoseLoss_clf(torch.nn.Module):
         scale_loss = 0
         conf_loss = 0
         conf_mean = 0
+        conf_geom_proxy_mean = 0
 
         kpts_center_loss, hm_kpts_loss, kpts_offset_loss = 0, 0, 0
 
@@ -157,14 +198,16 @@ class GraspPoseLoss_clf(torch.nn.Module):
                 ) / opt.num_stacks
 
             # The confidence / uncertainty loss.
-            # It learns a per-grasp scalar uncertainty from the detached keypoint regression error,
-            # so the first cut does not perturb the existing keypoint branch behavior.
+            # It learns a per-grasp scalar uncertainty from the detached reconstructed
+            # 2D keypoint geometry error, so the first cut does not perturb the existing
+            # keypoint branch behavior or the inference-time fusion logic.
             if opt.conf_branch and opt.conf_weight > 0:
-                conf_loss_this, conf_mean_this = self.crit_conf(
-                    output['conf'], output['kpts_center_offset'], batch
+                conf_loss_this, conf_mean_this, conf_geom_proxy_mean_this = self.crit_conf(
+                    output['conf'], output.get('reg', None), output['kpts_center_offset'], batch
                 )
                 conf_loss += conf_loss_this / opt.num_stacks
                 conf_mean += conf_mean_this / opt.num_stacks
+                conf_geom_proxy_mean += conf_geom_proxy_mean_this / opt.num_stacks
                 
         
 
@@ -179,7 +222,8 @@ class GraspPoseLoss_clf(torch.nn.Module):
                     'hm_kpts_loss': hm_kpts_loss, 'kpts_offset_loss': kpts_offset_loss,
                     "scale_loss": scale_loss,
                     "conf_loss": conf_loss,
-                    "conf_mean": conf_mean
+                    "conf_mean": conf_mean,
+                    "conf_geom_proxy_mean": conf_geom_proxy_mean
                     }
 
                        
@@ -206,6 +250,7 @@ class GraspPoseTrainer(BaseTrainer):
         if self.opt.conf_branch:
             loss_states.append("conf_loss")
             loss_states.append("conf_mean")
+            loss_states.append("conf_geom_proxy_mean")
 
         loss = GraspPoseLoss_clf(opt)
         return loss_states, loss
