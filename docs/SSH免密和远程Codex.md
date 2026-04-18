@@ -432,7 +432,7 @@ VSCode 左下角：SSH: autodl-kgn
 Codex 面板：可打开
 输入框：Ask Codex anything...
 IDE 背景信息：可见
-当前分支显示：feat/t2-geometry-aware-confidence
+当前分支显示：feat/t3-prob-pose-loss-clean
 ```
 
 这说明：
@@ -642,14 +642,27 @@ GitHub：
 
 T3.1 后续建议流程：
 
-1. 本地或云端确认 T3.1 分支来源。
+1. 云端确认当前基线分支为 `feat/t3-prob-pose-loss-clean`。
 2. 云端 `git status --short --branch`，确认工作区干净。
-3. 同步 T3.1 代码到云端 feature branch。
-4. 云端 Codex 审查 T3.1 相关文件，不碰数据和依赖。
-5. 运行最小 forward / dataset / loss 检查。
-6. 运行 1 epoch 或更短 smoke train。
-7. 记录命令和结果到 `docs/云服务器实验命令记录.md` 与 `docs/云服务器现状.md`。
-8. `git diff` 审查后再决定是否 commit / push。
+3. 确认 `src/lib/models/prob_pose_aux_loss.py`、`src/lib/models/monte_carlo_pose_loss.py`、`src/lib/third_party/epropnp/pnp/` 存在。
+4. 确认 `KGN-Pro-main/` 只作为参考目录存在，且 `git status --short --ignored | grep KGN-Pro-main` 输出 `!! KGN-Pro-main/`。
+5. 不直接在 `feat/t3-prob-pose-loss-clean` 上做功能修改；开始验证或修复前先新建分支。
+6. 云端 Codex 审查 T3.1 相关文件，不碰数据和依赖。
+7. 运行最小 forward / dataset / loss 检查。
+8. 运行 1 epoch 或更短 smoke train。
+9. 记录命令和结果到 `docs/云服务器实验命令记录.md` 与 `docs/云服务器现状.md`。
+10. `git diff` 审查后再决定是否 commit / push。
+
+当前云端交接状态：
+
+```text
+基线分支：feat/t3-prob-pose-loss-clean
+远程跟踪：origin/feat/t3-prob-pose-loss-clean
+工作区：clean
+T3.1 代码：已同步
+KGN-Pro-main：已上传并解压到 /root/autodl-tmp/KGN-main/KGN-Pro-main
+KGN-Pro-main Git 状态：被 .gitignore 忽略，仅作参考
+```
 
 ## 16. 常见问题
 
