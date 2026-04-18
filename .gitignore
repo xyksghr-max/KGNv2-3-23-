@@ -154,3 +154,14 @@ src/defense_demo_cam_*.png
 多物体数据集的产生1.png
 多物体数据集产生2.png
 src/lib/models/networks/DCNv2/
+
+# Local office/report/presentation scratch outputs
+.lo_profile/
+.midterm_report_work/
+.ppt_preview/
+.ppt_preview_6/
+.ppt_preview_9/
+.ppt_preview_final/
+.xdg_runtime/
+-files --others --exclude-standard
+已完成内容图片/
