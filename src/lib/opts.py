@@ -321,6 +321,20 @@ class opts(object):
                                  help="Fusion weight for confidence-aware ranking. final_score=(1-alpha)*center_score+alpha*confidence.")
         self.parser.add_argument('--conf_fusion_min_conf', type=float, default=0.0,
                                  help="Only apply confidence fusion when confidence >= this threshold. 0 disables gating.")
+        self.parser.add_argument('--prob_pose_loss', action="store_true",
+                                 help="Add a clean training-side probabilistic pose auxiliary loss without changing the inference chain.")
+        self.parser.add_argument('--prob_pose_weight', type=float, default=0.0,
+                                 help="The loss weight for the probabilistic pose auxiliary supervision.")
+        self.parser.add_argument('--prob_pose_warmup_iters', type=int, default=100,
+                                 help="Warm up the main T0/T2 training chain for this many iterations before enabling the probabilistic pose auxiliary loss.")
+        self.parser.add_argument('--prob_pose_ramp_iters', type=int, default=100,
+                                 help="Linearly ramp the probabilistic pose auxiliary loss weight to its target value over this many iterations after warmup.")
+        self.parser.add_argument('--prob_pose_soft_cap', type=float, default=5.0,
+                                 help="Soft cap for the raw probabilistic pose auxiliary loss. Uses cap*tanh(loss/cap) to reduce rare unstable gradients.")
+        self.parser.add_argument('--prob_pose_max_cost_mean', type=float, default=3.0,
+                                 help="Skip the probabilistic pose auxiliary loss for a batch when the raw target cost mean exceeds this threshold.")
+        self.parser.add_argument('--prob_pose_logweight_clip', type=float, default=10.0,
+                                 help="Clamp the differentiable Monte Carlo pose sample logweights to [-clip, clip] for numerical stability.")
         self.parser.add_argument('--scale_kpts_mode', type=int, default=0,
                                 help="Scaled keypoints mode. 0 for No and 1 for yes")
         self.parser.add_argument('--scale_coeff_k', type=float, default=1,

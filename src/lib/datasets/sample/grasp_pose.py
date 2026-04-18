@@ -217,6 +217,8 @@ class GraspPoseDataset(data.Dataset):
         vpts_inf_mask = np.zeros((self.max_grasps * num_vpts, 2), dtype=np.uint8)      # The mask for the vpts at the infinite
         scales = np.zeros((self.max_grasps, clf_num), dtype=np.float32)
         scales_mask = np.zeros((self.max_grasps, clf_num), dtype=np.uint8)
+        grasp_pose_cam = np.zeros((self.max_grasps, 4, 4), dtype=np.float32)
+        grasp_pose_mask = np.zeros((self.max_grasps,), dtype=np.uint8)
 
         draw_gaussian = draw_msra_gaussian if self.opt.mse_loss else \
             draw_umich_gaussian
@@ -291,6 +293,8 @@ class GraspPoseDataset(data.Dataset):
             reg_mask[k] = 1
             ind[k] = ind_this
             ori_clses[k] = ori_cls
+            grasp_pose_cam[k] = grasp_poses[k].astype(np.float32)
+            grasp_pose_mask[k] = 1
 
             # Fill in the scales
             scales[k, ori_cls] = grasp_scale
@@ -365,6 +369,17 @@ class GraspPoseDataset(data.Dataset):
         
         if self.opt.sep_scale_branch:
             ret.update({"scales": scales, "scales_mask": scales_mask})
+
+        intrinsic, _, _, _, _, _, _, _ = self._get_scene_info(scene_idx)
+        ret.update({
+            "grasp_pose_cam": grasp_pose_cam,
+            "grasp_pose_mask": grasp_pose_mask,
+            "camera_intrinsic": intrinsic.astype(np.float32),
+            "pose_loss_meta_c": c.astype(np.float32),
+            "pose_loss_meta_s": np.array([s], dtype=np.float32),
+            "pose_loss_img_hw": np.array([height, width], dtype=np.float32),
+            "pose_loss_valid": np.array(0 if flipped else 1, dtype=np.uint8),
+        })
 
         return ret
     

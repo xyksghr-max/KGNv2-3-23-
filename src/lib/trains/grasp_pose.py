@@ -8,6 +8,7 @@ import torch
 import numpy as np
 
 from models.losses import FocalLoss, RegL1Loss, RegLoss, RegWeightedL1Loss
+from models.prob_pose_aux_loss import ProbPoseAuxLoss
 from models.decode import grasp_pose_decode
 from models.utils import _sigmoid, flip_tensor, flip_lr_off, flip_lr, _transpose_and_gather_feat
 from utils.debugger import Debugger
@@ -118,6 +119,12 @@ class GraspPoseLoss_clf(torch.nn.Module):
         # the lightweight confidence / uncertainty loss
         if opt.conf_branch:
             self.crit_conf = ConfLoss(opt)
+
+        if opt.prob_pose_loss:
+            self.crit_prob_pose = ProbPoseAuxLoss(opt)
+            self.prob_pose_forward_calls = 0
+            self.prob_pose_warmup_iters = max(0, int(opt.prob_pose_warmup_iters))
+            self.prob_pose_ramp_iters = max(1, int(opt.prob_pose_ramp_iters))
             
         """CenterNet version
         self.crit = FocalLoss()
@@ -137,6 +144,10 @@ class GraspPoseLoss_clf(torch.nn.Module):
         conf_loss = 0
         conf_mean = 0
         conf_geom_proxy_mean = 0
+        prob_pose_loss = 0
+        prob_pose_valid_count = 0
+        prob_pose_cost_mean = 0
+        prob_pose_active_weight = 0
 
         kpts_center_loss, hm_kpts_loss, kpts_offset_loss = 0, 0, 0
 
@@ -208,13 +219,39 @@ class GraspPoseLoss_clf(torch.nn.Module):
                 conf_loss += conf_loss_this / opt.num_stacks
                 conf_mean += conf_mean_this / opt.num_stacks
                 conf_geom_proxy_mean += conf_geom_proxy_mean_this / opt.num_stacks
-                
-        
+
+            if opt.prob_pose_loss and opt.prob_pose_weight > 0:
+                if self.training:
+                    self.prob_pose_forward_calls += 1
+                if self.prob_pose_forward_calls <= self.prob_pose_warmup_iters:
+                    active_prob_pose_weight = 0.0
+                else:
+                    ramp_progress = (
+                        self.prob_pose_forward_calls - self.prob_pose_warmup_iters
+                    ) / float(self.prob_pose_ramp_iters)
+                    active_prob_pose_weight = opt.prob_pose_weight * min(
+                        max(ramp_progress, 0.0), 1.0
+                    )
+                prob_pose_loss_this, prob_pose_valid_count_this, prob_pose_cost_mean_this = self.crit_prob_pose(
+                    output.get('reg', None), output['kpts_center_offset'], batch
+                ) if active_prob_pose_weight > 0 else (
+                    output['hm'].sum() * 0,
+                    output['hm'].sum().detach() * 0,
+                    output['hm'].sum().detach() * 0,
+                )
+                prob_pose_loss += prob_pose_loss_this / opt.num_stacks
+                prob_pose_valid_count += prob_pose_valid_count_this / opt.num_stacks
+                prob_pose_cost_mean += prob_pose_cost_mean_this / opt.num_stacks
+                prob_pose_active_weight += (
+                    output['hm'].new_tensor(active_prob_pose_weight) / opt.num_stacks
+                )
+
 
         loss = opt.hm_weight * hm_loss + opt.w_weight * w_loss + \
             opt.off_weight * off_loss + opt.kpts_center_weight * kpts_center_loss + \
             opt.hm_kpts_weight * hm_kpts_loss + opt.off_weight * kpts_offset_loss + \
-            opt.scale_weight * scale_loss + opt.conf_weight * conf_loss
+            opt.scale_weight * scale_loss + opt.conf_weight * conf_loss + \
+            prob_pose_active_weight * prob_pose_loss
         
         
         loss_stats = {'loss': loss, 'hm_loss': hm_loss, 'w_loss': w_loss,
@@ -223,7 +260,11 @@ class GraspPoseLoss_clf(torch.nn.Module):
                     "scale_loss": scale_loss,
                     "conf_loss": conf_loss,
                     "conf_mean": conf_mean,
-                    "conf_geom_proxy_mean": conf_geom_proxy_mean
+                    "conf_geom_proxy_mean": conf_geom_proxy_mean,
+                    "prob_pose_loss": prob_pose_loss,
+                    "prob_pose_valid_count": prob_pose_valid_count,
+                    "prob_pose_cost_mean": prob_pose_cost_mean,
+                    "prob_pose_active_weight": prob_pose_active_weight
                     }
 
                        
@@ -251,6 +292,11 @@ class GraspPoseTrainer(BaseTrainer):
             loss_states.append("conf_loss")
             loss_states.append("conf_mean")
             loss_states.append("conf_geom_proxy_mean")
+        if self.opt.prob_pose_loss:
+            loss_states.append("prob_pose_loss")
+            loss_states.append("prob_pose_valid_count")
+            loss_states.append("prob_pose_cost_mean")
+            loss_states.append("prob_pose_active_weight")
 
         loss = GraspPoseLoss_clf(opt)
         return loss_states, loss
