@@ -4,6 +4,15 @@
 
 本文档记录本地 Ubuntu 20.04 通过 VSCode Remote-SSH 连接 AutoDL 云服务器，并在远程 VSCode 中使用 Codex 插件直接操作云端 `KGN-main` 工作区的配置过程。
 
+2026-04-19 策略更新：
+
+- 远程 VSCode / 远程 Codex 配置保留，但不再作为当前主开发入口。
+- 当前主开发入口回到本地 VSCode Codex：`/home/xyk/KGN-main`。
+- GitHub 作为本地与云端之间的版本中转、分支存档和回滚锚点。
+- 云服务器 `/root/autodl-tmp/KGN-main` 主要负责 `pull` 最新分支、GPU 训练、测试评估、保存日志和实验结果。
+- 云端实验结束后，只压缩单个 `exp/grasp_pose/<exp_id>` 实验目录，通过 FileZilla 下载回本地，再解压到本地 `exp/grasp_pose/` 供本地 Codex 分析。
+- 远程 Codex 当前降级为备用能力：云端环境检查、训练日志查看、短命令辅助和网络/代理排查。
+
 本文档记录：
 
 - SSH key 免密登录
@@ -24,7 +33,7 @@
 
 ## 2. 当前目标
 
-目标是在本地 VSCode 通过 Remote-SSH 连接云服务器后，让远程 VSCode 中的 Codex 插件把云端目录作为工作区：
+历史目标是在本地 VSCode 通过 Remote-SSH 连接云服务器后，让远程 VSCode 中的 Codex 插件把云端目录作为工作区：
 
 ```text
 /root/autodl-tmp/KGN-main
@@ -38,7 +47,7 @@
 - 直接运行云端环境检查和短测试
 - 后续配合 GitHub 在本地与云端之间同步代码
 
-当前阶段已经从单纯环境搭建进入 T3.1 验证与算法修改阶段，因此允许云端 Codex 参与小范围算法修改、训练侧验证和日志分析。
+当前阶段已经从单纯环境搭建进入 T3.1 验证阶段，但主代码修改入口已回到本地 Codex。云端 Codex 如临时使用，主要用于环境检查、训练侧短验证、日志查看和代理排查。
 
 ## 3. 本地与云端角色
 
@@ -75,9 +84,9 @@ GPU：RTX 4090 24GB
 
 推荐分工：
 
-- 本地 Codex：适合论文整理、文档、本地代码开发、较大重构。
-- 云端 Codex：适合云端环境检查、训练日志分析、小范围算法修改、短验证和 Git 管理。
-- GitHub：作为本地与云端代码同步中心。
+- 本地 Codex：当前主开发入口，负责论文整理、文档、本地代码开发、代码审计、轻量检查、commit 和 push。
+- 云端 Codex：备用工具，适合云端环境检查、训练日志分析、短验证和代理排查；不再作为主算法修改入口。
+- GitHub：作为本地与云端代码同步中心、分支存档和回滚锚点。
 
 ## 4. SSH key 免密登录
 
@@ -620,38 +629,45 @@ chmod -R u+w data pretrained_weights
 
 ## 15. 当前推荐工作流
 
-推荐云端 Codex 使用方式：
+当前推荐工作流已经从“云端 Codex 主开发”调整为“本地 Codex 主开发 + 云端训练评估”：
 
 ```text
-云端 Codex：
-  环境检查
-  训练日志分析
-  小范围算法修改
-  短验证
-  git status / git diff 审查
-
 本地 Codex：
-  较大代码设计
+  代码修改
+  代码审计
   文档整理
+  轻量静态检查
   本地分支维护
-  论文相关材料
+  commit / push
 
 GitHub：
-  本地与云端代码同步中心
+  版本中转
+  分支存档
+  回滚锚点
+
+云服务器：
+  pull 最新分支
+  GPU smoke train
+  正式训练
+  test.py 评估
+  保存日志和实验结果
+
+云端 Codex：
+  备用：环境检查、训练日志分析、短命令辅助、代理排查
 ```
 
 T3.1 后续建议流程：
 
-1. 云端确认当前基线分支为 `feat/t3-prob-pose-loss-clean`。
-2. 云端 `git status --short --branch`，确认工作区干净。
-3. 确认 `src/lib/models/prob_pose_aux_loss.py`、`src/lib/models/monte_carlo_pose_loss.py`、`src/lib/third_party/epropnp/pnp/` 存在。
-4. 确认 `KGN-Pro-main/` 只作为参考目录存在，且 `git status --short --ignored | grep KGN-Pro-main` 输出 `!! KGN-Pro-main/`。
-5. 不直接在 `feat/t3-prob-pose-loss-clean` 上做功能修改；开始验证或修复前先新建分支。
-6. 云端 Codex 审查 T3.1 相关文件，不碰数据和依赖。
-7. 运行最小 forward / dataset / loss 检查。
-8. 运行 1 epoch 或更短 smoke train。
-9. 记录命令和结果到 `docs/云服务器实验命令记录.md` 与 `docs/云服务器现状.md`。
-10. `git diff` 审查后再决定是否 commit / push。
+1. 本地确认当前基线分支为 `feat/t3-prob-pose-loss-clean`，并检查 `git status --short --branch`。
+2. 本地从当前最新确认分支创建新的功能/验证分支。
+3. 本地 Codex 审查或修改 T3.1 相关文件，完成轻量检查。
+4. 本地只 `git add` 指定文件，commit 并 push 到 GitHub。
+5. 云服务器 pull 最新分支。
+6. 云端运行最小 forward / dataset / loss 检查。
+7. 云端运行 1 epoch 或更短 smoke train，后续正式训练使用 `tmux` 或 `screen`。
+8. 云端测试/评估结束后，只压缩本次 `exp/grasp_pose/<exp_id>` 实验目录。
+9. 通过 FileZilla 下载 tar.gz 到本地，并解压到本地 `exp/grasp_pose/`。
+10. 本地 Codex 读取回传结果，分析日志、指标、analysis 和可视化文件，再决定下一步修改。
 
 当前云端交接状态：
 
@@ -749,9 +765,11 @@ KGN-main [SSH: autodl-kgn]
 - 远程 Codex 能读取云端工作区上下文。
 - 云端终端和 VSCode 能通过本地 Clash 访问外网。
 - 云端 `.codex` 授权与历史已经迁移。
+- 本地 Codex 可作为当前主开发入口，云端作为训练/评估执行端。
 
 当前限制：
 
 - AutoDL 容器内远程 Codex 沙箱不可用。
 - 远程 Codex 执行命令会比本地更频繁要求确认。
 - 若开启宽松权限，需要依靠 `AGENTS.md`、Git diff、人工确认和目录软保护降低风险。
+- 远程 Codex 网络链路依赖 SSH 反向代理、本地 Clash、远程 VSCode Server 和外部网络，稳定性不如本地 Codex，因此不再作为主开发入口。
