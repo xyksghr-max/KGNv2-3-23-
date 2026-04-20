@@ -1,29 +1,26 @@
 # Current Task
 
-Last updated: 2026-04-19
+Last updated: 2026-04-21
 
 ## Task
 
-Build the minimal persistent memory pack for KGN-main to reduce context-compaction forgetting.
+Run and recover the `d4ff8ca no-conf base` attribution experiment, while synchronizing the project documentation with the latest b1/e5 attribution results.
 
 ## Goal
 
-Add lightweight project memory files that future Codex/agent sessions can read first:
+Determine whether the strong `KGN-main internal kgnv2base` result comes from the broader KGN-main code path itself or from T2-specific confidence changes.
 
-- `AGENTS.md`
-- `STATUS.md`
-- `CURRENT_TASK.md`
-- `BUGS_AND_RISKS.md`
-- `docs/DECISIONS.md`
+The current attribution question is:
 
-These files should prevent repeated audits, wrong status assumptions, unsafe Git actions,
-incorrect experiment comparisons, and claims that unverified work is verified.
+- At `d4ff8ca`, with `--conf_branch`, `--conf_weight`, and `--conf_fusion` all disabled, does b1/e5 behave closer to official `paper2-clean` baseline or closer to `KGN-main internal kgnv2base`?
 
 ## In Scope
 
-- Add documentation-only memory files.
-- Record stable rules, current state, current task, known risks, and project decisions.
-- Keep the content short enough to be useful after context compaction.
+- Track the cloud `d4ff8ca no-conf base` b1/e5 training run.
+- Record and recover the final training/test state.
+- If no test was chained, run the no-conf model_best test later.
+- Update documentation with the latest experiment attribution facts.
+- Keep all b1/e5 results labeled as short-budget attribution, not final thesis-scale results.
 
 ## Out Of Scope
 
@@ -32,25 +29,30 @@ incorrect experiment comparisons, and claims that unverified work is verified.
 - No cloud execution.
 - No hook, MCP, skill, or Claude setup.
 - No changes to `data/`, `exp/`, `pretrained_weights/`, or `KGN-Pro-main/`.
-- No handling of the ignored zero-byte `.codex` file.
+- No checkpoint, tarball, dataset, or log submission.
 
-## Current Blocker
+## Current Cloud State
 
-Cloud verification is paused because the cloud server is not currently powered on.
+- Cloud workspace: `/root/autodl-tmp/KGN-main`.
+- Cloud branch: `diag-t2-d4ff8ca-base-ablation @ d4ff8ca`.
+- Screen session: `37818.d4ff8ca_base (Detached)`.
+- Running training exp_id: `diag_t2_d4ff8ca_base_no_conf_b1_single_r512_e5_val1_p20`.
+- Expected test exp_id: `diag_t2_d4ff8ca_base_no_conf_b1_best_test_d02_a30`.
+- Old stale T2 repeat training processes were killed; the intended remaining long job is the no-conf base training.
 
 ## Completion Criteria
 
-- The five memory files exist.
-- The files reflect the current true project state:
-  - T2 is the latest verified strong mainline.
-  - T3.1 is implemented but not formally verified.
-  - `KGN-Pro-main` is reference-only.
-  - local development plus GitHub plus cloud training/evaluation is the default workflow.
-- A light documentation check confirms the expected files exist.
-- Git status shows only the intended new documentation files plus pre-existing untracked files.
+- Cloud no-conf b1/e5 training completion is confirmed.
+- `model_best.pth` is evaluated with no `--conf_branch` and no `--conf_fusion`.
+- The resulting metrics are recorded against:
+  - official `paper2-clean baseline`
+  - `KGN-main internal kgnv2base`
+  - `T2 cloud repeat`
+  - `T2 local repeat`
+- Documentation no longer says T3.1 is pending first cloud validation; it says T3.1 has recovery signal but is not verified effective.
+- Documentation does not mislabel `KGN-main kgnv2base` as official baseline.
 
 ## After Completion
 
-If these files are accepted, update this task to the next active item, likely:
-
-- `T3.1 cloud Stage V0 and smoke validation`, once the cloud server is available.
+If no-conf base is weak, T2 evidence against the official clean baseline becomes stronger.
+If no-conf base is strong, run a stricter `paper2-clean + T2-only` migration experiment before writing T2 as an independent single-variable gain.
