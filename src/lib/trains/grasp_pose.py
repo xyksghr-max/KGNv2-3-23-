@@ -147,6 +147,9 @@ class GraspPoseLoss_clf(torch.nn.Module):
         prob_pose_loss = 0
         prob_pose_valid_count = 0
         prob_pose_cost_mean = 0
+        prob_pose_raw_loss = 0
+        prob_pose_high_cost_rate = 0
+        prob_pose_skip_rate = 0
         prob_pose_active_weight = 0
 
         kpts_center_loss, hm_kpts_loss, kpts_offset_loss = 0, 0, 0
@@ -232,16 +235,24 @@ class GraspPoseLoss_clf(torch.nn.Module):
                     active_prob_pose_weight = opt.prob_pose_weight * min(
                         max(ramp_progress, 0.0), 1.0
                     )
-                prob_pose_loss_this, prob_pose_valid_count_this, prob_pose_cost_mean_this = self.crit_prob_pose(
+                prob_pose_loss_this, prob_pose_valid_count_this, prob_pose_cost_mean_this, \
+                    prob_pose_raw_loss_this, prob_pose_high_cost_rate_this, \
+                    prob_pose_skip_rate_this = self.crit_prob_pose(
                     output.get('reg', None), output['kpts_center_offset'], batch
                 ) if active_prob_pose_weight > 0 else (
                     output['hm'].sum() * 0,
+                    output['hm'].sum().detach() * 0,
+                    output['hm'].sum().detach() * 0,
+                    output['hm'].sum().detach() * 0,
                     output['hm'].sum().detach() * 0,
                     output['hm'].sum().detach() * 0,
                 )
                 prob_pose_loss += prob_pose_loss_this / opt.num_stacks
                 prob_pose_valid_count += prob_pose_valid_count_this / opt.num_stacks
                 prob_pose_cost_mean += prob_pose_cost_mean_this / opt.num_stacks
+                prob_pose_raw_loss += prob_pose_raw_loss_this / opt.num_stacks
+                prob_pose_high_cost_rate += prob_pose_high_cost_rate_this / opt.num_stacks
+                prob_pose_skip_rate += prob_pose_skip_rate_this / opt.num_stacks
                 prob_pose_active_weight += (
                     output['hm'].new_tensor(active_prob_pose_weight) / opt.num_stacks
                 )
@@ -264,6 +275,9 @@ class GraspPoseLoss_clf(torch.nn.Module):
                     "prob_pose_loss": prob_pose_loss,
                     "prob_pose_valid_count": prob_pose_valid_count,
                     "prob_pose_cost_mean": prob_pose_cost_mean,
+                    "prob_pose_raw_loss": prob_pose_raw_loss,
+                    "prob_pose_high_cost_rate": prob_pose_high_cost_rate,
+                    "prob_pose_skip_rate": prob_pose_skip_rate,
                     "prob_pose_active_weight": prob_pose_active_weight
                     }
 
@@ -296,6 +310,9 @@ class GraspPoseTrainer(BaseTrainer):
             loss_states.append("prob_pose_loss")
             loss_states.append("prob_pose_valid_count")
             loss_states.append("prob_pose_cost_mean")
+            loss_states.append("prob_pose_raw_loss")
+            loss_states.append("prob_pose_high_cost_rate")
+            loss_states.append("prob_pose_skip_rate")
             loss_states.append("prob_pose_active_weight")
 
         loss = GraspPoseLoss_clf(opt)
