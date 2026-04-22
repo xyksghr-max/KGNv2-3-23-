@@ -337,6 +337,14 @@ class opts(object):
                                  help="Clamp the differentiable Monte Carlo pose sample logweights to [-clip, clip] for numerical stability.")
         self.parser.add_argument('--prob_pose_max_grasps', type=int, default=4,
                                  help="Maximum valid grasps per batch used by the probabilistic pose auxiliary loss.")
+        self.parser.add_argument('--prob_pose_use_conf_weight', action="store_true",
+                                 help="Use the detached confidence branch output as probabilistic pose w2d weights.")
+        self.parser.add_argument('--prob_pose_w2d_min', type=float, default=0.25,
+                                 help="Minimum confidence-derived w2d weight for probabilistic pose loss.")
+        self.parser.add_argument('--prob_pose_w2d_max', type=float, default=2.0,
+                                 help="Maximum confidence-derived w2d weight for probabilistic pose loss.")
+        self.parser.add_argument('--prob_pose_w2d_normalize', type=int, default=1,
+                                 help="Normalize confidence-derived w2d weights to mean 1 before clamping.")
         self.parser.add_argument('--scale_kpts_mode', type=int, default=0,
                                 help="Scaled keypoints mode. 0 for No and 1 for yes")
         self.parser.add_argument('--scale_coeff_k', type=float, default=1,
