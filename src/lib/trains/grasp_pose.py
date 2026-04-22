@@ -157,7 +157,13 @@ class GraspPoseLoss_clf(torch.nn.Module):
         prob_pose_w2d_mean = 0
         prob_pose_w2d_min = 0
         prob_pose_w2d_max = 0
+        prob_pose_w2d_std = 0
+        prob_pose_conf_quality_mean = 0
+        prob_pose_conf_quality_std = 0
+        prob_pose_conf_quality_min = 0
+        prob_pose_conf_quality_max = 0
         prob_pose_use_conf_weight_rate = 0
+        prob_pose_w2d_grad_rate = 0
 
         kpts_center_loss, hm_kpts_loss, kpts_offset_loss = 0, 0, 0
 
@@ -247,11 +253,20 @@ class GraspPoseLoss_clf(torch.nn.Module):
                     prob_pose_skip_rate_this, prob_pose_no_valid_rate_this, \
                     prob_pose_invalid_raw_rate_this, prob_pose_too_large_raw_rate_this, \
                     prob_pose_w2d_mean_this, prob_pose_w2d_min_this, \
-                    prob_pose_w2d_max_this, prob_pose_use_conf_weight_rate_this = self.crit_prob_pose(
+                    prob_pose_w2d_max_this, prob_pose_w2d_std_this, \
+                    prob_pose_conf_quality_mean_this, prob_pose_conf_quality_std_this, \
+                    prob_pose_conf_quality_min_this, prob_pose_conf_quality_max_this, \
+                    prob_pose_use_conf_weight_rate_this, prob_pose_w2d_grad_rate_this = self.crit_prob_pose(
                     output.get('reg', None), output['kpts_center_offset'], batch,
                     conf_map=output.get('conf', None)
                 ) if active_prob_pose_weight > 0 else (
                     output['hm'].sum() * 0,
+                    output['hm'].sum().detach() * 0,
+                    output['hm'].sum().detach() * 0,
+                    output['hm'].sum().detach() * 0,
+                    output['hm'].sum().detach() * 0,
+                    output['hm'].sum().detach() * 0,
+                    output['hm'].sum().detach() * 0,
                     output['hm'].sum().detach() * 0,
                     output['hm'].sum().detach() * 0,
                     output['hm'].sum().detach() * 0,
@@ -277,7 +292,13 @@ class GraspPoseLoss_clf(torch.nn.Module):
                 prob_pose_w2d_mean += prob_pose_w2d_mean_this / opt.num_stacks
                 prob_pose_w2d_min += prob_pose_w2d_min_this / opt.num_stacks
                 prob_pose_w2d_max += prob_pose_w2d_max_this / opt.num_stacks
+                prob_pose_w2d_std += prob_pose_w2d_std_this / opt.num_stacks
+                prob_pose_conf_quality_mean += prob_pose_conf_quality_mean_this / opt.num_stacks
+                prob_pose_conf_quality_std += prob_pose_conf_quality_std_this / opt.num_stacks
+                prob_pose_conf_quality_min += prob_pose_conf_quality_min_this / opt.num_stacks
+                prob_pose_conf_quality_max += prob_pose_conf_quality_max_this / opt.num_stacks
                 prob_pose_use_conf_weight_rate += prob_pose_use_conf_weight_rate_this / opt.num_stacks
+                prob_pose_w2d_grad_rate += prob_pose_w2d_grad_rate_this / opt.num_stacks
                 prob_pose_active_weight += (
                     output['hm'].new_tensor(active_prob_pose_weight) / opt.num_stacks
                 )
@@ -309,7 +330,13 @@ class GraspPoseLoss_clf(torch.nn.Module):
                     "prob_pose_w2d_mean": prob_pose_w2d_mean,
                     "prob_pose_w2d_min": prob_pose_w2d_min,
                     "prob_pose_w2d_max": prob_pose_w2d_max,
+                    "prob_pose_w2d_std": prob_pose_w2d_std,
+                    "prob_pose_conf_quality_mean": prob_pose_conf_quality_mean,
+                    "prob_pose_conf_quality_std": prob_pose_conf_quality_std,
+                    "prob_pose_conf_quality_min": prob_pose_conf_quality_min,
+                    "prob_pose_conf_quality_max": prob_pose_conf_quality_max,
                     "prob_pose_use_conf_weight_rate": prob_pose_use_conf_weight_rate,
+                    "prob_pose_w2d_grad_rate": prob_pose_w2d_grad_rate,
                     "prob_pose_active_weight": prob_pose_active_weight
                     }
 
@@ -351,7 +378,13 @@ class GraspPoseTrainer(BaseTrainer):
             loss_states.append("prob_pose_w2d_mean")
             loss_states.append("prob_pose_w2d_min")
             loss_states.append("prob_pose_w2d_max")
+            loss_states.append("prob_pose_w2d_std")
+            loss_states.append("prob_pose_conf_quality_mean")
+            loss_states.append("prob_pose_conf_quality_std")
+            loss_states.append("prob_pose_conf_quality_min")
+            loss_states.append("prob_pose_conf_quality_max")
             loss_states.append("prob_pose_use_conf_weight_rate")
+            loss_states.append("prob_pose_w2d_grad_rate")
             loss_states.append("prob_pose_active_weight")
 
         loss = GraspPoseLoss_clf(opt)

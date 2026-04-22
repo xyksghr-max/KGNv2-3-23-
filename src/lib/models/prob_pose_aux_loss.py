@@ -79,6 +79,9 @@ class ProbPoseAuxLoss(nn.Module):
         if self.w2d_max < self.w2d_min:
             self.w2d_max = self.w2d_min
         self.w2d_normalize = bool(int(getattr(opt, 'prob_pose_w2d_normalize', 1)))
+        self.w2d_detach = bool(int(getattr(opt, 'prob_pose_w2d_detach', 1)))
+        self.w2d_grad_scale = max(0.0, float(getattr(opt, 'prob_pose_w2d_grad_scale', 0.1)))
+        self.w2d_temperature = max(1e-6, float(getattr(opt, 'prob_pose_w2d_temperature', 1.0)))
 
         unit_kpts_3d = torch.tensor(
             GraspKpts3d(open_width=1.0, kpt_type=self.kpt_type).get_local_vertices(),
@@ -150,23 +153,34 @@ class ProbPoseAuxLoss(nn.Module):
         conf_pred = _transpose_and_gather_feat(conf_map, batch['ind'])
         conf_pred = conf_pred.gather(2, ori_clses.unsqueeze(2)).squeeze(2)
         conf_pred = torch.clamp(conf_pred, min=-5.0, max=5.0)
-        return torch.sigmoid(-conf_pred)
+        return torch.sigmoid(-conf_pred / self.w2d_temperature)
 
     def _build_w2d(self, conf_map, batch, ori_clses, valid_indices, kpt_pred_img):
         use_conf_weight = self.use_conf_weight and conf_map is not None
+        grad_enabled = use_conf_weight and not self.w2d_detach and self.w2d_grad_scale > 0
         if use_conf_weight:
             conf_quality = self._gather_conf_quality(conf_map, batch, ori_clses)
             conf_quality = conf_quality[valid_indices].float()
             conf_quality = torch.nan_to_num(
                 conf_quality, nan=1.0, posinf=self.w2d_max, neginf=self.w2d_min
             )
+            conf_quality_stats = conf_quality.detach()
+            w2d_scalar = conf_quality
             if self.w2d_normalize:
-                conf_quality = conf_quality / conf_quality.mean().detach().clamp(min=1e-6)
-            conf_quality = conf_quality.clamp(min=self.w2d_min, max=self.w2d_max)
-            w2d = torch.ones_like(kpt_pred_img) * conf_quality.detach().view(-1, 1, 1)
+                w2d_scalar = w2d_scalar / w2d_scalar.mean().detach().clamp(min=1e-6)
+            w2d_scalar = w2d_scalar.clamp(min=self.w2d_min, max=self.w2d_max)
+            w2d_detached_scalar = w2d_scalar.detach()
+            if grad_enabled:
+                w2d_scalar = w2d_detached_scalar + self.w2d_grad_scale * (
+                    w2d_scalar - w2d_detached_scalar
+                )
+            else:
+                w2d_scalar = w2d_detached_scalar
+            w2d = torch.ones_like(kpt_pred_img) * w2d_scalar.view(-1, 1, 1)
             use_conf_weight_rate = 1.0
         else:
             w2d = torch.ones_like(kpt_pred_img)
+            conf_quality_stats = w2d.detach().new_zeros(1)
             use_conf_weight_rate = 0.0
 
         w2d_detached = w2d.detach()
@@ -175,7 +189,13 @@ class ProbPoseAuxLoss(nn.Module):
             w2d_detached.mean(),
             w2d_detached.min(),
             w2d_detached.max(),
+            w2d_detached.std(unbiased=False),
+            conf_quality_stats.mean(),
+            conf_quality_stats.std(unbiased=False),
+            conf_quality_stats.min(),
+            conf_quality_stats.max(),
             w2d_detached.new_tensor(use_conf_weight_rate),
+            w2d_detached.new_tensor(1.0 if grad_enabled else 0.0),
         )
 
     def forward(self, reg_map, kpts_center_output, batch, conf_map=None):
@@ -214,7 +234,13 @@ class ProbPoseAuxLoss(nn.Module):
                 1.0,  # w2d_mean
                 1.0,  # w2d_min
                 1.0,  # w2d_max
+                0.0,  # w2d_std
+                0.0,  # conf_quality_mean
+                0.0,  # conf_quality_std
+                0.0,  # conf_quality_min
+                0.0,  # conf_quality_max
                 use_conf_weight_rate,
+                0.0,  # w2d_grad_rate
             )
             return (zero,) + stats
 
@@ -250,9 +276,11 @@ class ProbPoseAuxLoss(nn.Module):
         cam_intrinsic = torch.nan_to_num(cam_intrinsic, nan=0.0, posinf=0.0, neginf=0.0)
         img_hw = torch.nan_to_num(img_hw, nan=0.0, posinf=0.0, neginf=0.0)
 
-        w2d, w2d_mean, w2d_min, w2d_max, use_conf_weight_rate = self._build_w2d(
-            conf_map, batch, ori_clses, valid_indices, kpt_pred_img
-        )
+        w2d, w2d_mean, w2d_min, w2d_max, w2d_std, conf_quality_mean, \
+            conf_quality_std, conf_quality_min, conf_quality_max, \
+            use_conf_weight_rate, w2d_grad_rate = self._build_w2d(
+                conf_map, batch, ori_clses, valid_indices, kpt_pred_img
+            )
         camera = PerspectiveCamera(
             cam_mats=cam_intrinsic,
             z_min=0.01,
@@ -324,7 +352,13 @@ class ProbPoseAuxLoss(nn.Module):
                 w2d_mean.detach(),
                 w2d_min.detach(),
                 w2d_max.detach(),
+                w2d_std.detach(),
+                conf_quality_mean.detach(),
+                conf_quality_std.detach(),
+                conf_quality_min.detach(),
+                conf_quality_max.detach(),
                 use_conf_weight_rate.detach(),
+                w2d_grad_rate.detach(),
             )
 
         # The reference Monte Carlo pose term is a log-likelihood-style value
@@ -350,5 +384,11 @@ class ProbPoseAuxLoss(nn.Module):
             w2d_mean.detach(),
             w2d_min.detach(),
             w2d_max.detach(),
+            w2d_std.detach(),
+            conf_quality_mean.detach(),
+            conf_quality_std.detach(),
+            conf_quality_min.detach(),
+            conf_quality_max.detach(),
             use_conf_weight_rate.detach(),
+            w2d_grad_rate.detach(),
         )

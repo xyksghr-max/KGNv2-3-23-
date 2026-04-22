@@ -338,13 +338,19 @@ class opts(object):
         self.parser.add_argument('--prob_pose_max_grasps', type=int, default=4,
                                  help="Maximum valid grasps per batch used by the probabilistic pose auxiliary loss.")
         self.parser.add_argument('--prob_pose_use_conf_weight', action="store_true",
-                                 help="Use the detached confidence branch output as probabilistic pose w2d weights.")
+                                 help="Use the confidence branch output as probabilistic pose w2d weights.")
         self.parser.add_argument('--prob_pose_w2d_min', type=float, default=0.25,
                                  help="Minimum confidence-derived w2d weight for probabilistic pose loss.")
         self.parser.add_argument('--prob_pose_w2d_max', type=float, default=2.0,
                                  help="Maximum confidence-derived w2d weight for probabilistic pose loss.")
         self.parser.add_argument('--prob_pose_w2d_normalize', type=int, default=1,
                                  help="Normalize confidence-derived w2d weights to mean 1 before clamping.")
+        self.parser.add_argument('--prob_pose_w2d_detach', type=int, default=1,
+                                 help="Detach confidence-derived w2d weights from the probabilistic pose loss gradient path.")
+        self.parser.add_argument('--prob_pose_w2d_grad_scale', type=float, default=0.1,
+                                 help="Gradient scale for confidence-derived w2d weights when prob_pose_w2d_detach is 0.")
+        self.parser.add_argument('--prob_pose_w2d_temperature', type=float, default=1.0,
+                                 help="Temperature for converting confidence logits to probabilistic pose w2d weights.")
         self.parser.add_argument('--scale_kpts_mode', type=int, default=0,
                                 help="Scaled keypoints mode. 0 for No and 1 for yes")
         self.parser.add_argument('--scale_coeff_k', type=float, default=1,
