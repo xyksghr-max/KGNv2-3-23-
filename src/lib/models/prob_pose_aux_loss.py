@@ -254,7 +254,7 @@ class ProbPoseAuxLoss(nn.Module):
             raw_loss_is_finite.item()
             and raw_loss_detached.abs().item() > self.max_raw_loss_abs
         )
-        if invalid_raw or too_large_raw:
+        if invalid_raw:
             zero = self._zero_loss(reg_map, kpts_center_output)
             valid_count_tensor = valid_count.to(dtype=zero.dtype)
             raw_loss_stat = torch.nan_to_num(
@@ -272,14 +272,19 @@ class ProbPoseAuxLoss(nn.Module):
                 zero,
                 1.0,  # skip_rate
                 0.0,  # no_valid_rate
-                1.0 if invalid_raw else 0.0,
-                1.0 if too_large_raw else 0.0,
+                1.0,  # invalid_raw_rate
+                0.0,  # too_large_raw_rate
             )
             return (zero,) + stats
+
+        # The reference Monte Carlo pose term is a log-likelihood-style value
+        # and can become negative. In this local auxiliary branch we do not yet
+        # include the extra pose_opt_plus translation/rotation losses used by
+        # KGN-Pro, so optimize a bounded non-negative magnitude proxy while
+        # keeping the raw signed value for diagnostics.
+        loss = raw_loss.abs()
         if self.loss_soft_cap > 0:
-            loss = self.loss_soft_cap * torch.tanh(raw_loss / self.loss_soft_cap)
-        else:
-            loss = raw_loss
+            loss = self.loss_soft_cap * torch.tanh(loss / self.loss_soft_cap)
         valid_count_tensor = valid_count.to(dtype=loss.dtype)
         zero_stat = loss.detach() * 0
         return (
@@ -291,5 +296,5 @@ class ProbPoseAuxLoss(nn.Module):
             zero_stat,  # skip_rate
             zero_stat,  # no_valid_rate
             zero_stat,  # invalid_raw_rate
-            zero_stat,  # too_large_raw_rate
+            zero_stat + (1.0 if too_large_raw else 0.0),
         )
