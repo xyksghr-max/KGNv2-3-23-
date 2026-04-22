@@ -71,6 +71,7 @@ class ProbPoseAuxLoss(nn.Module):
         self.max_pose_grasps = max(1, int(getattr(opt, 'prob_pose_max_grasps', 4)))
         self.loss_soft_cap = float(getattr(opt, 'prob_pose_soft_cap', 5.0))
         self.max_cost_mean = float(getattr(opt, 'prob_pose_max_cost_mean', 3.0))
+        self.max_raw_loss_abs = 20.0
         self.logweight_clip = float(getattr(opt, 'prob_pose_logweight_clip', 10.0))
 
         unit_kpts_3d = torch.tensor(
@@ -136,6 +137,9 @@ class ProbPoseAuxLoss(nn.Module):
     def _zero_loss(self, reg_map, kpts_center_output):
         return reg_map.sum() * 0 if reg_map is not None else kpts_center_output.sum() * 0
 
+    def _zero_stats(self, zero, *values):
+        return tuple(zero.detach() + float(value) for value in values)
+
     def forward(self, reg_map, kpts_center_output, batch):
         ori_clses = batch['ori_clses'].long()
         ct_int_x = (batch['ind'] % self.output_res).float()
@@ -158,8 +162,18 @@ class ProbPoseAuxLoss(nn.Module):
         valid_count = valid_indices.sum()
         if valid_count.item() == 0:
             zero = self._zero_loss(reg_map, kpts_center_output)
-            one = zero.detach() + 1.0
-            return zero, zero.detach(), zero.detach(), zero.detach(), zero.detach(), one
+            stats = self._zero_stats(
+                zero,
+                0.0,  # valid_count
+                0.0,  # cost_mean
+                0.0,  # raw_loss
+                0.0,  # high_cost_rate
+                1.0,  # skip_rate
+                1.0,  # no_valid_rate
+                0.0,  # invalid_raw_rate
+                0.0,  # too_large_raw_rate
+            )
+            return (zero,) + stats
 
         if valid_count.item() > self.max_pose_grasps:
             limited_indices = torch.zeros_like(valid_indices)
@@ -223,11 +237,9 @@ class ProbPoseAuxLoss(nn.Module):
             cost_tgt, nan=0.0, posinf=0.0, neginf=0.0
         ).clamp(min=0.0, max=30.0)
         cost_tgt_raw_mean = cost_tgt.mean().detach()
-        if self.max_cost_mean > 0 and cost_tgt_raw_mean > self.max_cost_mean:
-            zero = self._zero_loss(reg_map, kpts_center_output)
-            valid_count_tensor = valid_count.to(dtype=zero.dtype)
-            one = zero.detach() + 1.0
-            return zero, valid_count_tensor.detach(), cost_tgt_raw_mean, zero.detach(), one, one
+        high_cost_rate = (
+            cost_tgt_raw_mean > self.max_cost_mean
+        ).to(dtype=cost_tgt_raw_mean.dtype) if self.max_cost_mean > 0 else cost_tgt_raw_mean * 0
         cost_tgt = (cost_tgt - cost_tgt.mean()) / (cost_tgt.std(unbiased=False) + 1e-6)
         # For the clean local prototype, keep the learning signal on the
         # differentiable Monte Carlo logweights and use the target cost as a
@@ -235,18 +247,49 @@ class ProbPoseAuxLoss(nn.Module):
         cost_tgt = cost_tgt.detach()
 
         raw_loss = self.pose_loss(pose_sample_logweights, cost_tgt, norm_factor)
-        if (not torch.isfinite(raw_loss)) or raw_loss.detach().abs() > 20.0:
+        raw_loss_detached = raw_loss.detach()
+        raw_loss_is_finite = torch.isfinite(raw_loss_detached)
+        invalid_raw = not raw_loss_is_finite.item()
+        too_large_raw = (
+            raw_loss_is_finite.item()
+            and raw_loss_detached.abs().item() > self.max_raw_loss_abs
+        )
+        if invalid_raw or too_large_raw:
             zero = self._zero_loss(reg_map, kpts_center_output)
             valid_count_tensor = valid_count.to(dtype=zero.dtype)
             raw_loss_stat = torch.nan_to_num(
-                raw_loss.detach(), nan=0.0, posinf=0.0, neginf=0.0
+                raw_loss_detached,
+                nan=0.0,
+                posinf=self.max_raw_loss_abs,
+                neginf=-self.max_raw_loss_abs,
             )
-            one = zero.detach() + 1.0
-            return zero, valid_count_tensor.detach(), cost_tgt_raw_mean, raw_loss_stat, zero.detach(), one
+            stats = (
+                valid_count_tensor.detach(),
+                cost_tgt_raw_mean,
+                raw_loss_stat,
+                high_cost_rate.detach(),
+            ) + self._zero_stats(
+                zero,
+                1.0,  # skip_rate
+                0.0,  # no_valid_rate
+                1.0 if invalid_raw else 0.0,
+                1.0 if too_large_raw else 0.0,
+            )
+            return (zero,) + stats
         if self.loss_soft_cap > 0:
             loss = self.loss_soft_cap * torch.tanh(raw_loss / self.loss_soft_cap)
         else:
             loss = raw_loss
         valid_count_tensor = valid_count.to(dtype=loss.dtype)
         zero_stat = loss.detach() * 0
-        return loss, valid_count_tensor.detach(), cost_tgt_raw_mean, raw_loss.detach(), zero_stat, zero_stat
+        return (
+            loss,
+            valid_count_tensor.detach(),
+            cost_tgt_raw_mean,
+            raw_loss_detached,
+            high_cost_rate.detach(),
+            zero_stat,  # skip_rate
+            zero_stat,  # no_valid_rate
+            zero_stat,  # invalid_raw_rate
+            zero_stat,  # too_large_raw_rate
+        )

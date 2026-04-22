@@ -332,7 +332,7 @@ class opts(object):
         self.parser.add_argument('--prob_pose_soft_cap', type=float, default=5.0,
                                  help="Soft cap for the raw probabilistic pose auxiliary loss. Uses cap*tanh(loss/cap) to reduce rare unstable gradients.")
         self.parser.add_argument('--prob_pose_max_cost_mean', type=float, default=3.0,
-                                 help="Skip the probabilistic pose auxiliary loss for a batch when the raw target cost mean exceeds this threshold.")
+                                 help="Diagnostic threshold for reporting high target-cost probabilistic pose batches.")
         self.parser.add_argument('--prob_pose_logweight_clip', type=float, default=10.0,
                                  help="Clamp the differentiable Monte Carlo pose sample logweights to [-clip, clip] for numerical stability.")
         self.parser.add_argument('--prob_pose_max_grasps', type=int, default=4,
