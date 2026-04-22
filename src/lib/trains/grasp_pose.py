@@ -95,6 +95,70 @@ class ConfLoss(torch.nn.Module):
         return loss, conf_mean, conf_geom_proxy_mean
 
 
+class KptConfLoss(ConfLoss):
+    """Per-keypoint heteroscedastic confidence / uncertainty loss.
+
+    This mirrors the scalar confidence proxy but supervises one uncertainty value
+    per orientation and grasp keypoint, which can later be used as detached w2d
+    correspondence reliability.
+    """
+
+    def forward(self, kpt_conf_map, reg_map, kpts_center_output, batch):
+        batch_size, max_grasps = batch['ori_clses'].shape
+        kpt_conf_pred = _transpose_and_gather_feat(kpt_conf_map, batch['ind'])
+        kpt_conf_pred = kpt_conf_pred.view(
+            batch_size, max_grasps, self.ori_num, self.num_kpts
+        )
+        ori_clses = batch['ori_clses'].long()
+        gather_index = ori_clses.view(batch_size, max_grasps, 1, 1).expand(
+            batch_size, max_grasps, 1, self.num_kpts
+        )
+        kpt_conf_pred = kpt_conf_pred.gather(2, gather_index).squeeze(2)
+        kpt_conf_pred = torch.clamp(kpt_conf_pred, min=-5., max=5.)
+
+        ct_int_x = (batch['ind'] % self.output_res).float()
+        ct_int_y = torch.div(batch['ind'], self.output_res, rounding_mode='floor').float()
+        ct_int = torch.stack([ct_int_x, ct_int_y], dim=2)
+
+        if reg_map is not None and 'reg' in batch:
+            reg_pred = _transpose_and_gather_feat(reg_map, batch['ind'])
+            reg_gt = batch['reg']
+        else:
+            reg_pred = torch.zeros_like(ct_int)
+            reg_gt = torch.zeros_like(ct_int)
+
+        center_pred = ct_int + reg_pred
+        center_gt = ct_int + reg_gt
+
+        kpts_center_pred = _transpose_and_gather_feat(kpts_center_output, batch['ind'])
+        kpts_center_target = batch['kpts_center_offset']
+        kpts_center_mask = batch['kpts_center_mask'].float()
+
+        pred_offsets = self._select_orientation_offsets(kpts_center_pred, ori_clses)
+        target_offsets = self._select_orientation_offsets(kpts_center_target, ori_clses)
+        offset_mask = self._select_orientation_offsets(kpts_center_mask, ori_clses).float()
+
+        kpt_pred = center_pred.unsqueeze(2) + pred_offsets
+        kpt_gt = center_gt.unsqueeze(2) + target_offsets
+
+        coord_valid_count = offset_mask.sum(dim=3)
+        valid_mask = (coord_valid_count > 0).float()
+        valid_mask = valid_mask * batch['reg_mask'].float().unsqueeze(2)
+        geom_err = (
+            torch.abs(kpt_pred - kpt_gt) * offset_mask
+        ).sum(dim=3) / (coord_valid_count + 1e-4)
+        geom_err = geom_err.detach()
+
+        loss = (torch.exp(-kpt_conf_pred) * geom_err + kpt_conf_pred) * valid_mask
+        loss = loss.sum() / (valid_mask.sum() + 1e-4)
+
+        kpt_conf_mean = (kpt_conf_pred * valid_mask).sum() / (valid_mask.sum() + 1e-4)
+        kpt_conf_geom_proxy_mean = (geom_err * valid_mask).sum() / (
+            valid_mask.sum() + 1e-4
+        )
+        return loss, kpt_conf_mean, kpt_conf_geom_proxy_mean
+
+
 class GraspPoseLoss_clf(torch.nn.Module):
     def __init__(self, opt):
         super(GraspPoseLoss_clf, self).__init__()
@@ -119,6 +183,8 @@ class GraspPoseLoss_clf(torch.nn.Module):
         # the lightweight confidence / uncertainty loss
         if opt.conf_branch:
             self.crit_conf = ConfLoss(opt)
+        if opt.kpt_conf_branch:
+            self.crit_kpt_conf = KptConfLoss(opt)
 
         if opt.prob_pose_loss:
             self.crit_prob_pose = ProbPoseAuxLoss(opt)
@@ -144,6 +210,9 @@ class GraspPoseLoss_clf(torch.nn.Module):
         conf_loss = 0
         conf_mean = 0
         conf_geom_proxy_mean = 0
+        kpt_conf_loss = 0
+        kpt_conf_mean = 0
+        kpt_conf_geom_proxy_mean = 0
         prob_pose_loss = 0
         prob_pose_valid_count = 0
         prob_pose_cost_mean = 0
@@ -236,6 +305,18 @@ class GraspPoseLoss_clf(torch.nn.Module):
                 conf_mean += conf_mean_this / opt.num_stacks
                 conf_geom_proxy_mean += conf_geom_proxy_mean_this / opt.num_stacks
 
+            if opt.kpt_conf_branch and opt.kpt_conf_weight > 0:
+                kpt_conf_loss_this, kpt_conf_mean_this, \
+                    kpt_conf_geom_proxy_mean_this = self.crit_kpt_conf(
+                        output['kpt_conf'], output.get('reg', None),
+                        output['kpts_center_offset'], batch
+                    )
+                kpt_conf_loss += kpt_conf_loss_this / opt.num_stacks
+                kpt_conf_mean += kpt_conf_mean_this / opt.num_stacks
+                kpt_conf_geom_proxy_mean += (
+                    kpt_conf_geom_proxy_mean_this / opt.num_stacks
+                )
+
             if opt.prob_pose_loss and opt.prob_pose_weight > 0:
                 if self.training:
                     self.prob_pose_forward_calls += 1
@@ -248,17 +329,32 @@ class GraspPoseLoss_clf(torch.nn.Module):
                     active_prob_pose_weight = opt.prob_pose_weight * min(
                         max(ramp_progress, 0.0), 1.0
                     )
-                prob_pose_loss_this, prob_pose_valid_count_this, prob_pose_cost_mean_this, \
-                    prob_pose_raw_loss_this, prob_pose_high_cost_rate_this, \
-                    prob_pose_skip_rate_this, prob_pose_no_valid_rate_this, \
-                    prob_pose_invalid_raw_rate_this, prob_pose_too_large_raw_rate_this, \
-                    prob_pose_w2d_mean_this, prob_pose_w2d_min_this, \
-                    prob_pose_w2d_max_this, prob_pose_w2d_std_this, \
-                    prob_pose_conf_quality_mean_this, prob_pose_conf_quality_std_this, \
-                    prob_pose_conf_quality_min_this, prob_pose_conf_quality_max_this, \
-                    prob_pose_use_conf_weight_rate_this, prob_pose_w2d_grad_rate_this = self.crit_prob_pose(
-                    output.get('reg', None), output['kpts_center_offset'], batch,
-                    conf_map=output.get('conf', None)
+                (
+                    prob_pose_loss_this,
+                    prob_pose_valid_count_this,
+                    prob_pose_cost_mean_this,
+                    prob_pose_raw_loss_this,
+                    prob_pose_high_cost_rate_this,
+                    prob_pose_skip_rate_this,
+                    prob_pose_no_valid_rate_this,
+                    prob_pose_invalid_raw_rate_this,
+                    prob_pose_too_large_raw_rate_this,
+                    prob_pose_w2d_mean_this,
+                    prob_pose_w2d_min_this,
+                    prob_pose_w2d_max_this,
+                    prob_pose_w2d_std_this,
+                    prob_pose_conf_quality_mean_this,
+                    prob_pose_conf_quality_std_this,
+                    prob_pose_conf_quality_min_this,
+                    prob_pose_conf_quality_max_this,
+                    prob_pose_use_conf_weight_rate_this,
+                    prob_pose_w2d_grad_rate_this,
+                ) = self.crit_prob_pose(
+                    output.get('reg', None),
+                    output['kpts_center_offset'],
+                    batch,
+                    conf_map=output.get('conf', None),
+                    kpt_conf_map=output.get('kpt_conf', None),
                 ) if active_prob_pose_weight > 0 else (
                     output['hm'].sum() * 0,
                     output['hm'].sum().detach() * 0,
@@ -308,6 +404,7 @@ class GraspPoseLoss_clf(torch.nn.Module):
             opt.off_weight * off_loss + opt.kpts_center_weight * kpts_center_loss + \
             opt.hm_kpts_weight * hm_kpts_loss + opt.off_weight * kpts_offset_loss + \
             opt.scale_weight * scale_loss + opt.conf_weight * conf_loss + \
+            opt.kpt_conf_weight * kpt_conf_loss + \
             prob_pose_active_weight * prob_pose_loss
         
         
@@ -318,6 +415,9 @@ class GraspPoseLoss_clf(torch.nn.Module):
                     "conf_loss": conf_loss,
                     "conf_mean": conf_mean,
                     "conf_geom_proxy_mean": conf_geom_proxy_mean,
+                    "kpt_conf_loss": kpt_conf_loss,
+                    "kpt_conf_mean": kpt_conf_mean,
+                    "kpt_conf_geom_proxy_mean": kpt_conf_geom_proxy_mean,
                     "prob_pose_loss": prob_pose_loss,
                     "prob_pose_valid_count": prob_pose_valid_count,
                     "prob_pose_cost_mean": prob_pose_cost_mean,
@@ -365,6 +465,10 @@ class GraspPoseTrainer(BaseTrainer):
             loss_states.append("conf_loss")
             loss_states.append("conf_mean")
             loss_states.append("conf_geom_proxy_mean")
+        if self.opt.kpt_conf_branch:
+            loss_states.append("kpt_conf_loss")
+            loss_states.append("kpt_conf_mean")
+            loss_states.append("kpt_conf_geom_proxy_mean")
         if self.opt.prob_pose_loss:
             loss_states.append("prob_pose_loss")
             loss_states.append("prob_pose_valid_count")

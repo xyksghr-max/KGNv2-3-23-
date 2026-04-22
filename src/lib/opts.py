@@ -315,6 +315,10 @@ class opts(object):
                                  help="Use a lightweight geometry-aware confidence/uncertainty branch.")
         self.parser.add_argument('--conf_weight', type=float, default=0,
                                  help="The weight for the geometry-aware confidence/uncertainty loss.")
+        self.parser.add_argument('--kpt_conf_branch', action="store_true",
+                                 help="Use a per-keypoint geometry-aware confidence/uncertainty branch.")
+        self.parser.add_argument('--kpt_conf_weight', type=float, default=0,
+                                 help="The weight for the per-keypoint confidence/uncertainty loss.")
         self.parser.add_argument('--conf_fusion', action="store_true",
                                  help="Use the confidence branch during inference to fuse a confidence-aware ranking score.")
         self.parser.add_argument('--conf_fusion_alpha', type=float, default=0.3,
@@ -339,6 +343,9 @@ class opts(object):
                                  help="Maximum valid grasps per batch used by the probabilistic pose auxiliary loss.")
         self.parser.add_argument('--prob_pose_use_conf_weight', action="store_true",
                                  help="Use the confidence branch output as probabilistic pose w2d weights.")
+        self.parser.add_argument('--prob_pose_w2d_source', type=str, default='scalar_conf',
+                                 choices=['scalar_conf', 'kpt_conf'],
+                                 help="Confidence source for probabilistic pose w2d weights.")
         self.parser.add_argument('--prob_pose_w2d_min', type=float, default=0.25,
                                  help="Minimum confidence-derived w2d weight for probabilistic pose loss.")
         self.parser.add_argument('--prob_pose_w2d_max', type=float, default=2.0,
@@ -464,6 +471,10 @@ class opts(object):
 
         # scale 
         opt.scale_kpts_mode = opt.sep_scale_branch and (opt.scale_kpts_mode == 1)
+        if opt.prob_pose_w2d_source == 'kpt_conf' and not opt.kpt_conf_branch:
+            raise ValueError(
+                "--prob_pose_w2d_source kpt_conf requires --kpt_conf_branch."
+            )
 
         return opt
 
@@ -519,6 +530,10 @@ class opts(object):
             # lightweight confidence / uncertainty branch
             if opt.conf_branch:
                 opt.heads.update({"conf": opt.ori_num})
+
+            # per-keypoint confidence / uncertainty branch
+            if opt.kpt_conf_branch:
+                opt.heads.update({"kpt_conf": opt.ori_num * dataset.num_grasp_kpts})
             
             # unit test
             if opt.unitTest:

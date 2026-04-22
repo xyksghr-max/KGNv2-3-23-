@@ -4,7 +4,7 @@ This file records known project risks and deferred issues. It is not a bug track
 for every experiment failure; keep it focused on risks that future Codex/agent
 sessions must not forget.
 
-Last updated: 2026-04-21
+Last updated: 2026-04-23
 
 ## Current High-Risk Misstatements
 
@@ -17,6 +17,8 @@ Last updated: 2026-04-21
 - Do not treat early P3 best, P4-lite-v2, or "fine-tune 3 epochs without pose_reg" as the latest verified mainline.
 - Do not mix `model_best.pth` and `model_last.pth` as strict same-class evidence without explicitly saying which one was used.
 - Do not write b1/e5 quick attribution numbers as final full-budget thesis results.
+- Do not describe T3.3b gradient-enabled scalar w2d as an effective improvement; it verified the gradient path but degraded b1/e5 performance.
+- Do not describe T3.3c-lite detached per-keypoint w2d as effective before cloud smoke, b1/e5 training, and controlled evaluation complete.
 
 ## Engineering Risks
 
@@ -61,6 +63,7 @@ Current decision:
 - `paper2-clean baseline` and `KGN-main` do not share a bit-identical code path; candidate generation, detector/test flow, dataset reading fixes, and analysis hooks may differ even when `--conf_branch` is off.
 - `conf_fusion` is P3 inference behavior. Turning it off tests P3-off/nofusion; it does not remove all P1/P2/T2-era code path differences.
 - Smoke train/test only proves that the link runs; it does not prove algorithmic improvement.
+- T3.3c-lite adds a training-side `kpt_conf` head and detached per-keypoint w2d source, but the test/inference chain still does not consume `kpt_conf`.
 - Cloud-generated `ps_grasp_multi_1k` data is not trusted and should not be used as the current formal data source.
 - Current trusted cloud data is the local-uploaded `ps_grasp_single_1k`.
 - Formal T3.1 validation still needs controlled training, testing, and result analysis against a strong baseline.

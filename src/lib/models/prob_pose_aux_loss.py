@@ -74,6 +74,15 @@ class ProbPoseAuxLoss(nn.Module):
         self.max_raw_loss_abs = 20.0
         self.logweight_clip = float(getattr(opt, 'prob_pose_logweight_clip', 10.0))
         self.use_conf_weight = bool(getattr(opt, 'prob_pose_use_conf_weight', False))
+        self.w2d_source = getattr(opt, 'prob_pose_w2d_source', 'scalar_conf')
+        if self.w2d_source not in ['scalar_conf', 'kpt_conf']:
+            raise ValueError("Unsupported prob_pose_w2d_source: {}".format(self.w2d_source))
+        if (
+            self.use_conf_weight
+            and self.w2d_source == 'kpt_conf'
+            and not bool(getattr(opt, 'kpt_conf_branch', False))
+        ):
+            raise ValueError("--prob_pose_w2d_source kpt_conf requires --kpt_conf_branch.")
         self.w2d_min = float(getattr(opt, 'prob_pose_w2d_min', 0.25))
         self.w2d_max = float(getattr(opt, 'prob_pose_w2d_max', 2.0))
         if self.w2d_max < self.w2d_min:
@@ -155,11 +164,35 @@ class ProbPoseAuxLoss(nn.Module):
         conf_pred = torch.clamp(conf_pred, min=-5.0, max=5.0)
         return torch.sigmoid(-conf_pred / self.w2d_temperature)
 
-    def _build_w2d(self, conf_map, batch, ori_clses, valid_indices, kpt_pred_img):
-        use_conf_weight = self.use_conf_weight and conf_map is not None
+    def _gather_kpt_conf_quality(self, kpt_conf_map, batch, ori_clses):
+        batch_size, max_grasps = ori_clses.shape
+        kpt_conf_pred = _transpose_and_gather_feat(kpt_conf_map, batch['ind'])
+        kpt_conf_pred = kpt_conf_pred.view(
+            batch_size, max_grasps, self.ori_num, self.num_kpts
+        )
+        gather_index = ori_clses.view(batch_size, max_grasps, 1, 1).expand(
+            batch_size, max_grasps, 1, self.num_kpts
+        )
+        kpt_conf_pred = kpt_conf_pred.gather(2, gather_index).squeeze(2)
+        kpt_conf_pred = torch.clamp(kpt_conf_pred, min=-5.0, max=5.0)
+        return torch.sigmoid(-kpt_conf_pred / self.w2d_temperature)
+
+    def _build_w2d(
+        self, conf_map, kpt_conf_map, batch, ori_clses, valid_indices, kpt_pred_img
+    ):
+        if self.w2d_source == 'kpt_conf':
+            conf_source = kpt_conf_map
+        else:
+            conf_source = conf_map
+        use_conf_weight = self.use_conf_weight and conf_source is not None
         grad_enabled = use_conf_weight and not self.w2d_detach and self.w2d_grad_scale > 0
         if use_conf_weight:
-            conf_quality = self._gather_conf_quality(conf_map, batch, ori_clses)
+            if self.w2d_source == 'kpt_conf':
+                conf_quality = self._gather_kpt_conf_quality(
+                    kpt_conf_map, batch, ori_clses
+                )
+            else:
+                conf_quality = self._gather_conf_quality(conf_map, batch, ori_clses)
             conf_quality = conf_quality[valid_indices].float()
             conf_quality = torch.nan_to_num(
                 conf_quality, nan=1.0, posinf=self.w2d_max, neginf=self.w2d_min
@@ -176,7 +209,10 @@ class ProbPoseAuxLoss(nn.Module):
                 )
             else:
                 w2d_scalar = w2d_detached_scalar
-            w2d = torch.ones_like(kpt_pred_img) * w2d_scalar.view(-1, 1, 1)
+            if self.w2d_source == 'kpt_conf':
+                w2d = torch.ones_like(kpt_pred_img) * w2d_scalar.unsqueeze(2)
+            else:
+                w2d = torch.ones_like(kpt_pred_img) * w2d_scalar.view(-1, 1, 1)
             use_conf_weight_rate = 1.0
         else:
             w2d = torch.ones_like(kpt_pred_img)
@@ -198,7 +234,9 @@ class ProbPoseAuxLoss(nn.Module):
             w2d_detached.new_tensor(1.0 if grad_enabled else 0.0),
         )
 
-    def forward(self, reg_map, kpts_center_output, batch, conf_map=None):
+    def forward(
+        self, reg_map, kpts_center_output, batch, conf_map=None, kpt_conf_map=None
+    ):
         ori_clses = batch['ori_clses'].long()
         ct_int_x = (batch['ind'] % self.output_res).float()
         ct_int_y = torch.div(batch['ind'], self.output_res, rounding_mode='floor').float()
@@ -218,7 +256,10 @@ class ProbPoseAuxLoss(nn.Module):
         valid_mask = batch['reg_mask'].float() * batch['grasp_pose_mask'].float() * pose_loss_valid
         valid_indices = valid_mask > 0
         valid_count = valid_indices.sum()
-        use_conf_weight_rate = 1.0 if self.use_conf_weight and conf_map is not None else 0.0
+        if self.w2d_source == 'kpt_conf':
+            use_conf_weight_rate = 1.0 if self.use_conf_weight and kpt_conf_map is not None else 0.0
+        else:
+            use_conf_weight_rate = 1.0 if self.use_conf_weight and conf_map is not None else 0.0
         if valid_count.item() == 0:
             zero = self._zero_loss(reg_map, kpts_center_output)
             stats = self._zero_stats(
@@ -279,7 +320,7 @@ class ProbPoseAuxLoss(nn.Module):
         w2d, w2d_mean, w2d_min, w2d_max, w2d_std, conf_quality_mean, \
             conf_quality_std, conf_quality_min, conf_quality_max, \
             use_conf_weight_rate, w2d_grad_rate = self._build_w2d(
-                conf_map, batch, ori_clses, valid_indices, kpt_pred_img
+                conf_map, kpt_conf_map, batch, ori_clses, valid_indices, kpt_pred_img
             )
         camera = PerspectiveCamera(
             cam_mats=cam_intrinsic,
