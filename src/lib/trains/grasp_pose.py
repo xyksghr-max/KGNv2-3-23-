@@ -156,6 +156,8 @@ class GraspPoseLoss_clf(torch.nn.Module):
         prob_pose_target_valid_total = 0
         prob_pose_target_selected_count = 0
         prob_pose_target_select_cost_mean = 0
+        prob_pose_target_geom_cost_mean = 0
+        prob_pose_target_conf_quality_mean = 0
         prob_pose_target_mode_id = 0
         prob_pose_active_weight = 0
 
@@ -248,9 +250,15 @@ class GraspPoseLoss_clf(torch.nn.Module):
                         prob_pose_skip_rate_this, prob_pose_no_valid_rate_this, \
                         prob_pose_invalid_raw_rate_this, prob_pose_too_large_raw_rate_this, \
                         prob_pose_target_valid_total_this, prob_pose_target_selected_count_this, \
-                        prob_pose_target_select_cost_mean_this, prob_pose_target_mode_id_this = \
+                        prob_pose_target_select_cost_mean_this, \
+                        prob_pose_target_geom_cost_mean_this, \
+                        prob_pose_target_conf_quality_mean_this, \
+                        prob_pose_target_mode_id_this = \
                         self.crit_prob_pose(
-                            output.get('reg', None), output['kpts_center_offset'], batch
+                            output.get('reg', None),
+                            output['kpts_center_offset'],
+                            batch,
+                            conf_map=output.get('conf', None),
                         )
                 else:
                     zero_loss = output['hm'].sum() * 0
@@ -267,6 +275,8 @@ class GraspPoseLoss_clf(torch.nn.Module):
                     prob_pose_target_valid_total_this = zero_stat
                     prob_pose_target_selected_count_this = zero_stat
                     prob_pose_target_select_cost_mean_this = zero_stat
+                    prob_pose_target_geom_cost_mean_this = zero_stat
+                    prob_pose_target_conf_quality_mean_this = zero_stat
                     prob_pose_target_mode_id_this = output['hm'].new_tensor(
                         float(getattr(self.crit_prob_pose, 'target_mode_id', 0))
                     ).detach()
@@ -287,6 +297,12 @@ class GraspPoseLoss_clf(torch.nn.Module):
                 )
                 prob_pose_target_select_cost_mean += (
                     prob_pose_target_select_cost_mean_this / opt.num_stacks
+                )
+                prob_pose_target_geom_cost_mean += (
+                    prob_pose_target_geom_cost_mean_this / opt.num_stacks
+                )
+                prob_pose_target_conf_quality_mean += (
+                    prob_pose_target_conf_quality_mean_this / opt.num_stacks
                 )
                 prob_pose_target_mode_id += prob_pose_target_mode_id_this / opt.num_stacks
                 prob_pose_active_weight += (
@@ -320,6 +336,8 @@ class GraspPoseLoss_clf(torch.nn.Module):
                     "prob_pose_target_valid_total": prob_pose_target_valid_total,
                     "prob_pose_target_selected_count": prob_pose_target_selected_count,
                     "prob_pose_target_select_cost_mean": prob_pose_target_select_cost_mean,
+                    "prob_pose_target_geom_cost_mean": prob_pose_target_geom_cost_mean,
+                    "prob_pose_target_conf_quality_mean": prob_pose_target_conf_quality_mean,
                     "prob_pose_target_mode_id": prob_pose_target_mode_id,
                     "prob_pose_active_weight": prob_pose_active_weight
                     }
@@ -362,6 +380,8 @@ class GraspPoseTrainer(BaseTrainer):
             loss_states.append("prob_pose_target_valid_total")
             loss_states.append("prob_pose_target_selected_count")
             loss_states.append("prob_pose_target_select_cost_mean")
+            loss_states.append("prob_pose_target_geom_cost_mean")
+            loss_states.append("prob_pose_target_conf_quality_mean")
             loss_states.append("prob_pose_target_mode_id")
             loss_states.append("prob_pose_active_weight")
 

@@ -338,10 +338,12 @@ class opts(object):
         self.parser.add_argument('--prob_pose_max_grasps', type=int, default=4,
                                  help="Maximum valid grasps per batch used by the probabilistic pose auxiliary loss.")
         self.parser.add_argument('--prob_pose_target_mode', type=str, default="first",
-                                 choices=["first", "random", "nearest_cost"],
+                                 choices=["first", "random", "nearest_cost", "nearest_conf"],
                                  help="Target selection mode for the probabilistic pose auxiliary loss.")
         self.parser.add_argument('--prob_pose_target_topk', type=int, default=4,
                                  help="Candidate pool size for nearest-cost probabilistic pose target selection.")
+        self.parser.add_argument('--prob_pose_target_conf_min', type=float, default=0.05,
+                                 help="Minimum detached confidence quality used by nearest-conf probabilistic pose target selection.")
         self.parser.add_argument('--scale_kpts_mode', type=int, default=0,
                                 help="Scaled keypoints mode. 0 for No and 1 for yes")
         self.parser.add_argument('--scale_coeff_k', type=float, default=1,
@@ -395,6 +397,12 @@ class opts(object):
 
         # added for the grasp pose
         opt.kpts_refine = not opt.no_kpts_refine
+        if opt.prob_pose_target_conf_min <= 0:
+            raise ValueError('--prob_pose_target_conf_min must be positive.')
+        if opt.prob_pose_target_mode == 'nearest_conf' and not opt.conf_branch:
+            raise ValueError(
+                '--prob_pose_target_mode nearest_conf requires --conf_branch.'
+            )
 
         if opt.head_conv == -1:  # init default head_conv
             opt.head_conv = 256 if 'dla' in opt.arch else 64

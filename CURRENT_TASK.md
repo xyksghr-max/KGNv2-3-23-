@@ -4,18 +4,18 @@ Last updated: 2026-04-23
 
 ## Task
 
-Document completed T3.4 Multi-Grasp Target Matching results and reset the comparison baseline policy.
+Implement T3.5 Confidence-Aware Target Selection on top of the documented T3.4 nearest-cost branch.
 
 ## Goal
 
-Record that T3.4 has completed cloud smoke, b1/e5 training, best/last evaluation,
-result transfer, and local analysis. The main comparison target is now the T2 strong
-baseline family, not only T3.2b-fix.
+Add a low-risk KGN-Pro-lite combined training-side enhancement that keeps the current
+deterministic test chain stable while making target selection use the existing
+`conf_branch` signal.
 
 ## In Scope
 
-- Branch: `feat/t3.4-multigrasp-target-matching`.
-- Base commit: `134cd27 fix: stabilize probabilistic pose auxiliary loss`.
+- Branch: `feat/t3.5-conf-aware-target-selection`.
+- Base commit: `1fb0084 docs: record t34 result interpretation against t2 baselines`.
 - Files in scope:
   - `src/lib/opts.py`
   - `src/lib/models/prob_pose_aux_loss.py`
@@ -24,10 +24,13 @@ baseline family, not only T3.2b-fix.
   - `first`: compatibility path, same flattened valid-grasp order as `134cd27`.
   - `random`: sample up to `prob_pose_max_grasps` valid grasps with PyTorch RNG.
   - `nearest_cost`: choose by detached 2D keypoint geometry cost.
+  - `nearest_conf`: rerank a geometry-topk pool by detached confidence-aware selection score.
 - Diagnostics:
   - `prob_pose_target_valid_total`
   - `prob_pose_target_selected_count`
   - `prob_pose_target_select_cost_mean`
+  - `prob_pose_target_geom_cost_mean`
+  - `prob_pose_target_conf_quality_mean`
   - `prob_pose_target_mode_id`
 
 ## Out Of Scope
@@ -36,21 +39,18 @@ baseline family, not only T3.2b-fix.
 - No KGN-Pro-main directory migration.
 - No `KGN-Pro-main/src/lib/trains/base_trainer.py` migration.
 - No generated data, checkpoints, tarballs, or large logs.
-- No formal effectiveness claim before cloud smoke and b1/e5 runs complete.
+- No formal effectiveness claim before T3.5 cloud smoke and b1/e5 runs complete.
 
 ## Current State
 
-- T3.4 code implementation is complete.
+- T3.5 local code implementation is complete.
 - Local static checks passed:
   - `python -m py_compile src/lib/opts.py src/lib/models/prob_pose_aux_loss.py src/lib/trains/grasp_pose.py`
-  - `conda run -n kgnv2 python -m py_compile src/lib/opts.py src/lib/models/prob_pose_aux_loss.py src/lib/trains/grasp_pose.py`
-- A small `kgnv2` target-selection smoke confirmed mode ids and selection counts for
-  `first`, `random`, and `nearest_cost`.
-- Cloud b1/e1 smoke completed for `first`, `random`, and `nearest_cost`.
-- Cloud b1/e5 completed for `random` and `nearest_cost`.
-- Best/last deterministic evaluations completed and were transferred back locally.
+  - `rg "nearest_conf|prob_pose_target_conf_min|prob_pose_target_geom_cost_mean|prob_pose_target_conf_quality_mean" src/lib`
+- T3.4 remains the last completed cloud-validated branch.
+- T3.5 has not yet been smoke-tested on the cloud.
 
-Main T3.4 metrics:
+Current upstream reference metrics:
 
 | Mode | Best | Last | Interpretation |
 | --- | --- | --- | --- |
@@ -67,12 +67,11 @@ Primary comparison targets:
 
 Current conclusion:
 
-- `nearest_cost` validates the KGN-Pro-style multi-grasp target matching idea under b1/e5 short-budget attribution.
-- It should be described as close to and partially competitive with T2, not as a new overall strongest result.
-- `random` should be kept as a negative target-selection control.
+- `nearest_cost` is the current positive T3.4 base to build from.
+- `nearest_conf` is implemented as the next low-risk KGN-Pro-lite combined step.
+- T3.5 still needs cloud smoke, b1/e5 training, and deterministic evaluation before any effectiveness conclusion.
 
 ## Next Step
 
-Update documentation and commit the result record. The next method branch should build
-from the T3.4 `nearest_cost` evidence toward a KGN-Pro-lite combined path, while keeping
-the test/inference chain stable unless a dedicated probabilistic-inference task is opened.
+Run cloud smoke for `nearest_cost` compatibility and `nearest_conf` validation, then run
+the `nearest_conf` b1/e5 short-budget experiment and best/last deterministic evaluation.

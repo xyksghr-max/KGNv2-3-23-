@@ -1,16 +1,41 @@
 # KGN-main Current Status
 
 Last updated: 2026-04-23
-Status commit at update: pending T3.4 result documentation
+Status commit at update: working tree on T3.5 local implementation
+
+## Branch-Local T3.5 Status
+
+- Current local branch: `feat/t3.5-conf-aware-target-selection`.
+- Branch base: `1fb0084 docs: record t34 result interpretation against t2 baselines`.
+- Branch role: T3.5 confidence-aware target selection training-side combined experiment.
+- Code status: local implementation complete and static checks passed.
+- Cloud status: not started yet for T3.5.
+- Scope guard: this branch keeps the T3.4 deterministic test/inference chain unchanged.
+
+T3.5 local implementation scope:
+
+- extends `prob_pose_target_mode` with `nearest_conf`
+- adds `--prob_pose_target_conf_min`
+- keeps `first/random/nearest_cost` behavior compatible
+- adds confidence-aware target selection inside `ProbPoseAuxLoss`
+- keeps `w2d = ones_like(...)` and does not reopen the T3.3 `w2d` line
+- adds diagnostics:
+  - `prob_pose_target_geom_cost_mean`
+  - `prob_pose_target_conf_quality_mean`
+- threads `output.get('conf', None)` from the trainer into `ProbPoseAuxLoss`
+
+T3.5 local verification completed:
+
+- `python -m py_compile src/lib/opts.py src/lib/models/prob_pose_aux_loss.py src/lib/trains/grasp_pose.py`
+- `rg "nearest_conf|prob_pose_target_conf_min|prob_pose_target_geom_cost_mean|prob_pose_target_conf_quality_mean" src/lib`
+
+T3.5 next validation steps:
+
+- cloud `nearest_cost` b1/e1 smoke for compatibility
+- cloud `nearest_conf` b1/e1 smoke for new-mode validation
+- cloud `nearest_conf` b1/e5 + best/last deterministic evaluation
 
 ## Branch-Local T3.4 Status
-
-- Current local branch: `feat/t3.4-multigrasp-target-matching`.
-- Branch base: `134cd27 fix: stabilize probabilistic pose auxiliary loss`.
-- Branch role: T3.4 Multi-Grasp Target Matching training-side experiment.
-- Code status: implemented, committed, pushed, and pulled on the cloud.
-- Cloud status: smoke, b1/e5 training, best/last evaluation, compression, transfer, and local extraction are complete.
-- Scope guard: this branch intentionally does not include the T3.3c code stack.
 
 T3.4 cloud results, all b1/e5 short-budget attribution:
 
@@ -62,11 +87,11 @@ The older status below is retained as historical context from the `134cd27` line
 
 ## Current Git State
 
-- Current local branch: `feat/t3.4-multigrasp-target-matching`.
-- Current upstream branch: `origin/feat/t3.4-multigrasp-target-matching`.
-- Current latest known code commit: `468cd48 feat: add multigrasp pose target matching`.
-- Current local branch role: T3.4 target-matching experiment and result documentation.
-- Current cloud T3.4 task: completed; no known T3.4 training process is expected to be running.
+- Current local branch: `feat/t3.5-conf-aware-target-selection`.
+- Current upstream branch: none yet.
+- Current latest known committed code base under this branch: `1fb0084 docs: record t34 result interpretation against t2 baselines`.
+- Current local branch role: T3.5 confidence-aware target selection implementation and upcoming cloud validation.
+- Current cloud T3.4 task: completed; T3.5 has not been pulled or run on the cloud yet.
 
 Known local untracked files at the time this status was created:
 

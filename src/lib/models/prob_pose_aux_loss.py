@@ -74,11 +74,15 @@ class ProbPoseAuxLoss(nn.Module):
             'first': 0,
             'random': 1,
             'nearest_cost': 2,
+            'nearest_conf': 3,
         }
         if self.target_mode not in self.target_mode_to_id:
             raise ValueError("Unsupported prob_pose_target_mode: {}".format(self.target_mode))
         self.target_mode_id = self.target_mode_to_id[self.target_mode]
         self.target_topk = max(1, int(getattr(opt, 'prob_pose_target_topk', 4)))
+        self.target_conf_min = max(
+            float(getattr(opt, 'prob_pose_target_conf_min', 0.05)), 1e-6
+        )
         self.loss_soft_cap = float(getattr(opt, 'prob_pose_soft_cap', 5.0))
         self.max_cost_mean = float(getattr(opt, 'prob_pose_max_cost_mean', 3.0))
         self.max_raw_loss_abs = 20.0
@@ -150,24 +154,41 @@ class ProbPoseAuxLoss(nn.Module):
     def _zero_stats(self, zero, *values):
         return tuple(zero.detach() + float(value) for value in values)
 
-    def _select_target_indices(self, valid_indices, target_cost=None):
+    def _gather_orientation_scalar(self, feat_map, inds, ori_clses):
+        feat = _transpose_and_gather_feat(feat_map, inds)
+        return feat.gather(2, ori_clses.unsqueeze(2)).squeeze(2)
+
+    def _select_target_indices(
+        self, valid_indices, target_cost=None, target_conf_quality=None
+    ):
         valid_total = valid_indices.sum()
         valid_total_int = int(valid_total.item())
         cost_zero = valid_total.detach().float() * 0.0
         if valid_total_int == 0:
-            return valid_indices, valid_total, valid_total, cost_zero
+            return (
+                valid_indices,
+                valid_total,
+                valid_total,
+                cost_zero,
+                cost_zero,
+                cost_zero,
+            )
 
         valid_coords = valid_indices.nonzero(as_tuple=False)
         if self.target_mode == 'first':
             selected_count_int = min(valid_total_int, self.max_pose_grasps)
             selected_coords = valid_coords[:selected_count_int]
             select_cost_mean = cost_zero
+            geom_cost_mean = cost_zero
+            conf_quality_mean = cost_zero
         elif self.target_mode == 'random':
             selected_count_int = min(valid_total_int, self.max_pose_grasps)
             perm = torch.randperm(valid_total_int, device=valid_coords.device)
             selected_coords = valid_coords[perm[:selected_count_int]]
             select_cost_mean = cost_zero
-        else:
+            geom_cost_mean = cost_zero
+            conf_quality_mean = cost_zero
+        elif self.target_mode == 'nearest_cost':
             if target_cost is None:
                 raise ValueError("nearest_cost target selection requires target_cost")
             valid_cost = target_cost[valid_indices].detach()
@@ -180,12 +201,52 @@ class ProbPoseAuxLoss(nn.Module):
             selected_order = order[:selected_count_int]
             selected_coords = valid_coords[selected_order]
             select_cost_mean = valid_cost[selected_order].mean()
+            geom_cost_mean = select_cost_mean
+            conf_quality_mean = cost_zero
+        else:
+            if target_cost is None:
+                raise ValueError("nearest_conf target selection requires target_cost")
+            if target_conf_quality is None:
+                raise ValueError(
+                    "nearest_conf target selection requires target_conf_quality"
+                )
+            valid_cost = target_cost[valid_indices].detach()
+            valid_cost = torch.nan_to_num(
+                valid_cost, nan=1e6, posinf=1e6, neginf=1e6
+            )
+            valid_conf_quality = target_conf_quality[valid_indices].detach()
+            valid_conf_quality = torch.nan_to_num(
+                valid_conf_quality, nan=0.0, posinf=1.0, neginf=0.0
+            ).clamp(min=0.0, max=1.0)
+            topk_count = min(valid_total_int, self.target_topk)
+            _, order = torch.topk(valid_cost, k=topk_count, largest=False)
+            pool_cost = valid_cost[order]
+            pool_conf_quality = valid_conf_quality[order]
+            pool_select_score = pool_cost / pool_conf_quality.clamp(
+                min=self.target_conf_min
+            )
+            selected_count_int = min(topk_count, self.max_pose_grasps)
+            _, refined_order = torch.topk(
+                pool_select_score, k=selected_count_int, largest=False
+            )
+            selected_order = order[refined_order]
+            selected_coords = valid_coords[selected_order]
+            select_cost_mean = pool_select_score[refined_order].mean()
+            geom_cost_mean = valid_cost[selected_order].mean()
+            conf_quality_mean = valid_conf_quality[selected_order].mean()
 
         selected_indices = torch.zeros_like(valid_indices)
         if selected_coords.numel() > 0:
             selected_indices[selected_coords[:, 0], selected_coords[:, 1]] = True
         selected_count = selected_indices.sum()
-        return selected_indices, valid_total, selected_count, select_cost_mean
+        return (
+            selected_indices,
+            valid_total,
+            selected_count,
+            select_cost_mean,
+            geom_cost_mean,
+            conf_quality_mean,
+        )
 
     def _compute_detached_keypoint_cost(
         self, kpt_pred_img, ct_int, ori_clses, pose_centers, pose_scales, batch
@@ -218,7 +279,7 @@ class ProbPoseAuxLoss(nn.Module):
             keypoint_cost.detach(), nan=1e6, posinf=1e6, neginf=1e6
         )
 
-    def forward(self, reg_map, kpts_center_output, batch):
+    def forward(self, reg_map, kpts_center_output, batch, conf_map=None):
         ori_clses = batch['ori_clses'].long()
         ct_int_x = (batch['ind'] % self.output_res).float()
         ct_int_y = torch.div(batch['ind'], self.output_res, rounding_mode='floor').float()
@@ -253,6 +314,8 @@ class ProbPoseAuxLoss(nn.Module):
                 0.0,  # target_valid_total
                 0.0,  # target_selected_count
                 0.0,  # target_select_cost_mean
+                0.0,  # target_geom_cost_mean
+                0.0,  # target_conf_quality_mean
                 self.target_mode_id,  # target_mode_id
             )
             return (zero,) + stats
@@ -261,13 +324,25 @@ class ProbPoseAuxLoss(nn.Module):
         pose_scales = batch['pose_loss_meta_s'].float().view(-1, 1)
         kpt_pred_img = self._output_to_image_coords(kpt_pred_out, pose_centers, pose_scales)
 
-        target_select_cost = None
-        if self.target_mode == 'nearest_cost':
-            target_select_cost = self._compute_detached_keypoint_cost(
+        target_geom_cost = None
+        if self.target_mode in ('nearest_cost', 'nearest_conf'):
+            target_geom_cost = self._compute_detached_keypoint_cost(
                 kpt_pred_img, ct_int, ori_clses, pose_centers, pose_scales, batch
             )
-        valid_indices, target_valid_total, target_selected_count, target_select_cost_mean = \
-            self._select_target_indices(valid_indices, target_select_cost)
+        target_conf_quality = None
+        if self.target_mode == 'nearest_conf':
+            if conf_map is None:
+                raise ValueError("nearest_conf target selection requires conf_map")
+            conf_pred = self._gather_orientation_scalar(conf_map, batch['ind'], ori_clses)
+            target_conf_quality = torch.sigmoid(-conf_pred)
+            target_conf_quality = torch.nan_to_num(
+                target_conf_quality, nan=0.0, posinf=1.0, neginf=0.0
+            ).detach().clamp(min=0.0, max=1.0)
+        valid_indices, target_valid_total, target_selected_count, \
+            target_select_cost_mean, target_geom_cost_mean, \
+            target_conf_quality_mean = self._select_target_indices(
+                valid_indices, target_geom_cost, target_conf_quality
+            )
         valid_count = target_selected_count
 
         kpt_pred_img = kpt_pred_img[valid_indices]
@@ -362,6 +437,8 @@ class ProbPoseAuxLoss(nn.Module):
                 target_valid_total.to(dtype=zero.dtype).detach(),
                 target_selected_count.to(dtype=zero.dtype).detach(),
                 target_select_cost_mean.to(dtype=zero.dtype).detach(),
+                target_geom_cost_mean.to(dtype=zero.dtype).detach(),
+                target_conf_quality_mean.to(dtype=zero.dtype).detach(),
                 zero.detach() + float(self.target_mode_id),
             )
             return (zero,) + stats
@@ -379,6 +456,8 @@ class ProbPoseAuxLoss(nn.Module):
         target_valid_total_tensor = target_valid_total.to(dtype=loss.dtype).detach()
         target_selected_count_tensor = target_selected_count.to(dtype=loss.dtype).detach()
         target_select_cost_mean = target_select_cost_mean.to(dtype=loss.dtype).detach()
+        target_geom_cost_mean = target_geom_cost_mean.to(dtype=loss.dtype).detach()
+        target_conf_quality_mean = target_conf_quality_mean.to(dtype=loss.dtype).detach()
         return (
             loss,
             valid_count_tensor.detach(),
@@ -392,5 +471,7 @@ class ProbPoseAuxLoss(nn.Module):
             target_valid_total_tensor,
             target_selected_count_tensor,
             target_select_cost_mean,
+            target_geom_cost_mean,
+            target_conf_quality_mean,
             zero_stat + float(self.target_mode_id),
         )
