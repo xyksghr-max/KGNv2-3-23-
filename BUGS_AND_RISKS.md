@@ -8,8 +8,10 @@ Last updated: 2026-04-23
 
 ## Current High-Risk Misstatements
 
-- Do not describe T3.4 as effective before cloud smoke, b1/e5 training, and best/last evaluation are complete.
-- Do not compare T3.4 `random` and `nearest_cost` runs against older results unless the data source, training budget, and inference settings match.
+- Do not describe T3.4 `random` as effective; it is a negative/control result.
+- Do not describe T3.4 `nearest_cost` as a new overall strongest model; it is a positive b1/e5 attribution result close to the T2 strong-baseline range.
+- Do not frame T3.4 mainly as "better than T3.2b-fix"; the main comparison should be against `paper2-clean`, `d4ff8ca no-conf base`, and T2 strong baselines.
+- Do not compare T3.4 `random` and `nearest_cost` runs against older results unless the data source, training budget, model checkpoint type, and inference settings match.
 - Do not say T3.1 is verified effective. It is implemented and shows recovery-style positive signal relative to `ctrl_t2off`, but it has not beaten the strong internal baseline.
 - Do not call `KGN-main internal kgnv2base` the official `paper2-clean` baseline.
 - Do not describe `paper2-clean baseline` vs `KGN-main T2` as a strict single-variable T2 ablation.
@@ -31,9 +33,10 @@ Observation:
 
 Current decision:
 
-- Treat T3.4 as a small training-side attribution experiment until cloud results say otherwise.
-- The `first` mode is the compatibility path and should be used as the first smoke check.
-- If `nearest_cost` is unstable, stop promoting it and continue only with `random`.
+- Treat T3.4 as a completed b1/e5 short-budget attribution experiment, not a final full-budget thesis result.
+- `random` completed but is negative; keep it only as a control.
+- `nearest_cost` completed and is the only T3.4 mode worth carrying forward.
+- `first` remains a compatibility path; only run b1/e5 for it if a strict same-branch control is needed later.
 
 ### `opts.py --pnp_type` default mismatch
 
@@ -83,10 +86,13 @@ Current decision:
 ## Current Attribution Risks
 
 - `paper2-clean baseline b1/e5` around `0.1013 / 0.0922 / 0.4920` is the official-clean fast baseline.
-- `KGN-main internal kgnv2base b1/e5` around `0.1995 / 0.2240 / 0.7670` is a strong internal baseline whose source is still being attributed.
+- `d4ff8ca no-conf base b1/e5` around `0.1597 / 0.1585 / 0.6440` is the main KGN-main no-confidence attribution baseline.
+- `old T2 best + P3 on` around `0.2021 / 0.2088 / 0.7270`, `T2 cloud repeat model_last + P3 on` around `0.1837 / 0.1998 / 0.7530`, and `T2 local repeat model_best + P3 on` around `0.2090 / 0.2320 / 0.7430` are the primary T2 strong-baseline references.
+- `KGN-main internal kgnv2base b1/e5` around `0.1995 / 0.2240 / 0.7670` is retained as a historical/internal reference, not the dominant T3.4 comparison target.
 - `T2 cloud repeat model_last + P3 on` around `0.1837 / 0.1998 / 0.7530` supports that T2 is strong against official clean, but it is not yet the strictest single-variable proof.
 - `T2 cloud repeat model_last + P3 off` around `0.1618 / 0.1483 / 0.6840` shows P3 helps this checkpoint, but nofusion still remains above paper2-clean.
-- The current `d4ff8ca no-conf base` experiment is needed before deciding whether `paper2-clean + T2-only` migration is necessary.
+- `T3.4 nearest_cost` around `0.1954 / 0.2080 / 0.7480` is positive and near the T2 strong-baseline range, but it does not yet beat all T2 references in all three metrics.
+- `T3.4 random` around `0.1096 / 0.1291 / 0.5060` is negative.
 
 ## KGN-Pro-main Migration Risks
 

@@ -1,22 +1,49 @@
 # KGN-main Current Status
 
 Last updated: 2026-04-23
-Status commit at update: pending T3.4 local commit
+Status commit at update: pending T3.4 result documentation
 
 ## Branch-Local T3.4 Status
 
 - Current local branch: `feat/t3.4-multigrasp-target-matching`.
 - Branch base: `134cd27 fix: stabilize probabilistic pose auxiliary loss`.
 - Branch role: T3.4 Multi-Grasp Target Matching training-side experiment.
-- Code status: local implementation complete; static checks pass.
-- Cloud status: no T3.4 smoke or b1/e5 run has been started yet.
+- Code status: implemented, committed, pushed, and pulled on the cloud.
+- Cloud status: smoke, b1/e5 training, best/last evaluation, compression, transfer, and local extraction are complete.
 - Scope guard: this branch intentionally does not include the T3.3c code stack.
+
+T3.4 cloud results, all b1/e5 short-budget attribution:
+
+- `t34_random_b1_single_r512_e5_val1_p20_g4`
+  - best: `0.1053 / 0.1229 / 0.4850`
+  - last: `0.1096 / 0.1291 / 0.5060`
+  - interpretation: negative/control result; random GT grasp selection injects noisy supervision.
+- `t34_nearest_b1_single_r512_e5_val1_p20_g4`
+  - best: `0.1954 / 0.2080 / 0.7480`
+  - last: `0.1954 / 0.2080 / 0.7480`
+  - interpretation: positive KGN-Pro-inspired target-matching result; close to T2 strong baselines but not a new overall champion.
+
+Candidate-level comparison against the main T2 strong baselines:
+
+| Experiment | GSR/GCR/OSR | decoded | score-filtered | PnP failed | accepted | successful preds | accepted reproj mean |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `old T2 best` | `0.2021 / 0.2088 / 0.7270` | 99972 | 59468 | 780 | 58688 | 11856 | 0.6825 |
+| `T2 cloud repeat last + P3 on` | `0.1837 / 0.1998 / 0.7530` | 99382 | 64225 | 2245 | 61980 | 11383 | 1.0848 |
+| `T2 local repeat best + P3 on` | `0.2090 / 0.2320 / 0.7430` | 99607 | 65963 | 1036 | 64927 | 13572 | 0.7236 |
+| `T3.4 nearest_cost` | `0.1954 / 0.2080 / 0.7480` | 99819 | 61509 | 1081 | 60428 | 11805 | 0.6741 |
+
+Current baseline policy:
+
+- Primary method comparison should use `paper2-clean`, `d4ff8ca no-conf base`, and the T2 strong baselines.
+- `KGN-main internal kgnv2base` remains a historical/internal reference, not the main baseline for T3.4 claims.
+- The main T3.4 claim is not "better than T3.2b-fix"; it is "nearest-cost multi-grasp target matching brings the KGN-Pro-inspired training-side path into the T2 strong-baseline range."
 
 Known local untracked files remain user/local files and must not be deleted or submitted:
 
 - `KGNv2-Sim PROJECT_PROGRESS.md`
 - `implementation_plan.md`
 - `src/lib/third_party/__init__.py`
+- `邢亚坤-中期报告.doc`
 
 T3.4 touched only:
 
@@ -35,12 +62,11 @@ The older status below is retained as historical context from the `134cd27` line
 
 ## Current Git State
 
-- Current local branch: `docs-agent-memory-pack`.
-- Current upstream branch: `origin/docs-agent-memory-pack`.
-- Current latest known commit: `0c32bdb docs: add agent memory pack`.
-- Current local branch role: documentation memory/status branch.
-- Current cloud running branch: `diag-t2-d4ff8ca-base-ablation @ d4ff8ca`.
-- Current cloud running task: `d4ff8ca no-conf base b1/e5` attribution experiment.
+- Current local branch: `feat/t3.4-multigrasp-target-matching`.
+- Current upstream branch: `origin/feat/t3.4-multigrasp-target-matching`.
+- Current latest known code commit: `468cd48 feat: add multigrasp pose target matching`.
+- Current local branch role: T3.4 target-matching experiment and result documentation.
+- Current cloud T3.4 task: completed; no known T3.4 training process is expected to be running.
 
 Known local untracked files at the time this status was created:
 
@@ -55,17 +81,20 @@ These are treated as user/local files. Do not delete, overwrite, or submit them 
 All b1/e5 results below are short-budget attribution results, not final thesis-scale results.
 
 - `paper2-clean baseline b1/e5`: `0.1013 / 0.0922 / 0.4920`.
-- `KGN-main internal kgnv2base b1/e5`: `0.1995 / 0.2240 / 0.7670`.
+- `d4ff8ca no-conf base b1/e5`: `0.1597 / 0.1585 / 0.6440`.
+- `old T2 best local-train/cloud-test + P3 on`: `0.2021 / 0.2088 / 0.7270`.
 - `T2 cloud repeat model_last + P3 on`: `0.1837 / 0.1998 / 0.7530`.
 - `T2 cloud repeat model_last + P3 off`: `0.1618 / 0.1483 / 0.6840`.
 - `T2 local repeat model_best + P3 on`: `0.2090 / 0.2320 / 0.7430`.
+- `T3.4 nearest_cost best/last + P3 on`: `0.1954 / 0.2080 / 0.7480`.
+- `KGN-main internal kgnv2base b1/e5`: `0.1995 / 0.2240 / 0.7670` as historical/internal reference.
 
 Current interpretation:
 
-- T2 is clearly better than the official `paper2-clean` b1/e5 baseline under the recorded fast attribution setting.
-- `KGN-main internal kgnv2base` is a strong internal baseline, not the official paper2-clean baseline.
-- T2 independent contribution still needs attribution against either `d4ff8ca no-conf base` or `paper2-clean + T2-only`.
-- P3/conf_fusion contributes positively for the T2 checkpoint, because T2 P3-on exceeds T2 P3-off.
+- T2 remains the strongest verified mainline family under the b1/e5 attribution setting.
+- `T3.4 nearest_cost` is a positive KGN-Pro-inspired result and should be compared mainly with T2 strong baselines, not only with T3.2b-fix.
+- `T3.4 random` is a negative/control result and should not be continued as a main path.
+- `KGN-main internal kgnv2base` is not the official paper2-clean baseline and should not dominate the current T3.4 comparison story.
 
 ## T3.1 Status
 
@@ -113,19 +142,23 @@ The cloud server is the training/evaluation executor:
 - conda environment: `kgnv2`
 - GPU: RTX 4090 24GB
 - trusted data: local-uploaded `data/ps_grasp_single_1k`
-- current cloud branch: `diag-t2-d4ff8ca-base-ablation @ d4ff8ca`
-- current screen session: `37818.d4ff8ca_base (Detached)`
-- current running exp_id: `diag_t2_d4ff8ca_base_no_conf_b1_single_r512_e5_val1_p20`
-- expected follow-up test exp_id: `diag_t2_d4ff8ca_base_no_conf_b1_best_test_d02_a30`
+- latest completed T3.4 cloud branch: `feat/t3.4-multigrasp-target-matching @ 468cd48`
+- latest completed T3.4 train exp_ids:
+  - `t34_random_b1_single_r512_e5_val1_p20_g4`
+  - `t34_nearest_b1_single_r512_e5_val1_p20_g4`
+- latest completed T3.4 test exp_ids:
+  - `t34_random_best_test_a07_g03_d02_a30`
+  - `t34_random_last_test_a07_g03_d02_a30`
+  - `t34_nearest_best_test_a07_g03_d02_a30`
+  - `t34_nearest_last_test_a07_g03_d02_a30`
 
 The cloud server may be powered off. Do not assume it is available until checked.
 
 When the cloud server is available, the next default action is:
 
-1. check whether `d4ff8ca no-conf base b1/e5` finished
-2. recover/test `model_best.pth` if testing was not chained automatically
-3. compare the result against `paper2-clean baseline`, `KGN-main internal kgnv2base`, and T2 repeat
-4. decide whether a stricter `paper2-clean + T2-only` migration experiment is still needed
+1. verify no leftover T3.4 process is running before starting new jobs
+2. only run a new job from a newly agreed branch/plan
+3. if continuing from T3.4, prefer `nearest_cost` as the base and keep `random` as a negative control only
 
 ## Experiment Transfer Rule
 

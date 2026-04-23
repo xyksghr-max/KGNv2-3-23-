@@ -3,6 +3,35 @@
 This file records stable project decisions so future sessions do not reopen
 settled questions after context compaction.
 
+## 2026-04-23 T3.4 Result Interpretation Uses T2 Strong Baselines
+
+Decision:
+
+- T3.4 `nearest_cost` is a positive b1/e5 attribution result, but not a new overall strongest mainline.
+- T3.4 `random` is a negative/control result and should not be carried forward as a main method.
+- T3.4 should be compared primarily against `paper2-clean`, `d4ff8ca no-conf base`, and T2 strong baselines.
+- `KGN-main internal kgnv2base` remains a historical/internal reference, not the dominant comparison target for T3.4 claims.
+
+Why:
+
+- T3.4 `nearest_cost` reached `0.1954 / 0.2080 / 0.7480`, close to the T2 strong-baseline range.
+- The main T2 references are:
+  - old T2 best + P3 on: `0.2021 / 0.2088 / 0.7270`
+  - T2 cloud repeat model_last + P3 on: `0.1837 / 0.1998 / 0.7530`
+  - T2 local repeat model_best + P3 on: `0.2090 / 0.2320 / 0.7430`
+- Candidate-level analysis shows T3.4 `nearest_cost` has strong geometry quality (`accepted_reproj_mean = 0.6741`) but still does not dominate every T2 reference in every metric.
+- The project goal is not to prove "prob_pose_loss alone beats T3.2b-fix"; it is to gradually build a KGN-Pro-lite path combining confidence/correspondence weighting, EPro-PnP/MC loss, probabilistic inference, x2d, and multi-grasp target matching where feasible.
+
+Consequences:
+
+- Future writeups should say: T3.4 validates `nearest_cost` multi-grasp target matching as a useful KGN-Pro-inspired training-side module under b1/e5 attribution.
+- Do not write that T3.4 fully reproduces KGN-Pro or surpasses all T2 baselines.
+- The next method branch should build from T3.4 `nearest_cost` evidence toward a combined KGN-Pro-lite route, while keeping the current deterministic test chain stable unless a dedicated inference task is opened.
+
+Status:
+
+- active
+
 ## 2026-04-23 T3.4 Starts From Clean T3.2b-Fix Lineage
 
 Decision:
@@ -26,7 +55,7 @@ Consequences:
 
 Status:
 
-- active
+- completed for implementation and b1/e5 attribution
 
 ## 2026-04-19 Main Workspace And Workflow
 
@@ -70,7 +99,8 @@ Why:
 Consequences:
 
 - `paper2-clean` remains the official-clean baseline for comparison to the released paper2 code.
-- `KGN-main internal kgnv2base` is a strong internal baseline and must be treated as an attribution target.
+- `KGN-main internal kgnv2base` is a strong internal/historical reference and should not be confused with the official-clean baseline.
+- For T3.4 and later KGN-Pro-inspired comparisons, the main practical baselines are `paper2-clean`, `d4ff8ca no-conf base`, and the T2 strong baselines; `KGN-main internal kgnv2base` is retained as a reference line rather than the dominant comparison target.
 - Do not present paper2-clean vs KGN-main T2 as a strict single-variable T2 ablation without caveats.
 
 Status:
@@ -89,16 +119,17 @@ Why:
 - The no-conf run is cheaper and directly tests whether the strong baseline already exists at the T2 commit when T2/P3 runtime switches are off.
 - If no-conf base is weak, T2 evidence against official clean is already much clearer.
 - If no-conf base is strong, the strict T2-only migration becomes more important for thesis-grade attribution.
+- The completed no-conf result is around `0.1597 / 0.1585 / 0.6440`, above paper2-clean but below the main T2 P3-on references.
 
 Consequences:
 
-- Current cloud branch is `diag-t2-d4ff8ca-base-ablation @ d4ff8ca`.
-- Current no-conf training exp_id is `diag_t2_d4ff8ca_base_no_conf_b1_single_r512_e5_val1_p20`.
-- Expected no-conf test exp_id is `diag_t2_d4ff8ca_base_no_conf_b1_best_test_d02_a30`.
+- The no-conf result should be used as the main KGN-main no-confidence attribution baseline.
+- It does not replace T2 P3-on as the strong mainline.
+- It reduces the need to keep using `KGN-main internal kgnv2base` as the main comparison axis for T3.4.
 
 Status:
 
-- active
+- completed for b1/e5 attribution
 
 ## 2026-04-21 T3.2 Should Challenge The Strong Internal Baseline
 

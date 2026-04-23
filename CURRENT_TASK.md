@@ -4,15 +4,13 @@ Last updated: 2026-04-23
 
 ## Task
 
-Implement T3.4 Multi-Grasp Target Matching from clean code point `134cd27`.
+Document completed T3.4 Multi-Grasp Target Matching results and reset the comparison baseline policy.
 
 ## Goal
 
-Add a minimal training-side target selection experiment for the probabilistic pose
-auxiliary loss without changing the inference or evaluation chain.
-
-T3.4 tests whether selecting different valid GT grasps for EPro-PnP supervision
-helps the short-budget b1/e5 attribution setting.
+Record that T3.4 has completed cloud smoke, b1/e5 training, best/last evaluation,
+result transfer, and local analysis. The main comparison target is now the T2 strong
+baseline family, not only T3.2b-fix.
 
 ## In Scope
 
@@ -42,21 +40,39 @@ helps the short-budget b1/e5 attribution setting.
 
 ## Current State
 
-- T3.4 code implementation is complete locally.
-- Local static checks pass:
+- T3.4 code implementation is complete.
+- Local static checks passed:
   - `python -m py_compile src/lib/opts.py src/lib/models/prob_pose_aux_loss.py src/lib/trains/grasp_pose.py`
   - `conda run -n kgnv2 python -m py_compile src/lib/opts.py src/lib/models/prob_pose_aux_loss.py src/lib/trains/grasp_pose.py`
 - A small `kgnv2` target-selection smoke confirmed mode ids and selection counts for
   `first`, `random`, and `nearest_cost`.
-- Cloud smoke training has not been run yet.
+- Cloud b1/e1 smoke completed for `first`, `random`, and `nearest_cost`.
+- Cloud b1/e5 completed for `random` and `nearest_cost`.
+- Best/last deterministic evaluations completed and were transferred back locally.
+
+Main T3.4 metrics:
+
+| Mode | Best | Last | Interpretation |
+| --- | --- | --- | --- |
+| `random` | `0.1053 / 0.1229 / 0.4850` | `0.1096 / 0.1291 / 0.5060` | negative/control |
+| `nearest_cost` | `0.1954 / 0.2080 / 0.7480` | `0.1954 / 0.2080 / 0.7480` | positive; near T2 strong-baseline range |
+
+Primary comparison targets:
+
+- `paper2-clean baseline`: `0.1013 / 0.0922 / 0.4920`.
+- `d4ff8ca no-conf base`: `0.1597 / 0.1585 / 0.6440`.
+- `old T2 best + P3 on`: `0.2021 / 0.2088 / 0.7270`.
+- `T2 cloud repeat model_last + P3 on`: `0.1837 / 0.1998 / 0.7530`.
+- `T2 local repeat model_best + P3 on`: `0.2090 / 0.2320 / 0.7430`.
+
+Current conclusion:
+
+- `nearest_cost` validates the KGN-Pro-style multi-grasp target matching idea under b1/e5 short-budget attribution.
+- It should be described as close to and partially competitive with T2, not as a new overall strongest result.
+- `random` should be kept as a negative target-selection control.
 
 ## Next Step
 
-Commit and push T3.4, then on the cloud run b1/e1 smoke in this order:
-
-1. `--prob_pose_target_mode first`
-2. `--prob_pose_target_mode random`
-3. `--prob_pose_target_mode nearest_cost`
-
-If smoke is stable, run b1/e5 for `random` and `nearest_cost`, then evaluate best/last
-with the existing deterministic test chain.
+Update documentation and commit the result record. The next method branch should build
+from the T3.4 `nearest_cost` evidence toward a KGN-Pro-lite combined path, while keeping
+the test/inference chain stable unless a dedicated probabilistic-inference task is opened.
