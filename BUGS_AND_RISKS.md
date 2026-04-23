@@ -4,12 +4,13 @@ This file records known project risks and deferred issues. It is not a bug track
 for every experiment failure; keep it focused on risks that future Codex/agent
 sessions must not forget.
 
-Last updated: 2026-04-23
+Last updated: 2026-04-24
 
 ## Current High-Risk Misstatements
 
 - Do not describe T3.4 `random` as effective; it is a negative/control result.
 - Do not describe T3.4 `nearest_cost` as a new overall strongest model; it is a positive b1/e5 attribution result close to the T2 strong-baseline range.
+- Do not describe T3.5a `nearest_conf` as effective or as the new mainline; it completed the full train/test cycle but did not beat `T3.4 nearest_cost` in a useful overall sense.
 - Do not frame T3.4 mainly as "better than T3.2b-fix"; the main comparison should be against `paper2-clean`, `d4ff8ca no-conf base`, and T2 strong baselines.
 - Do not compare T3.4 `random` and `nearest_cost` runs against older results unless the data source, training budget, model checkpoint type, and inference settings match.
 - Do not say T3.1 is verified effective. It is implemented and shows recovery-style positive signal relative to `ctrl_t2off`, but it has not beaten the strong internal baseline.
@@ -21,6 +22,7 @@ Last updated: 2026-04-23
 - Do not treat early P3 best, P4-lite-v2, or "fine-tune 3 epochs without pose_reg" as the latest verified mainline.
 - Do not mix `model_best.pth` and `model_last.pth` as strict same-class evidence without explicitly saying which one was used.
 - Do not write b1/e5 quick attribution numbers as final full-budget thesis results.
+- Do not write that `T3.4 nearest_cost` has cleanly beaten `T2 cloud repeat + P3 on` without noting that the cloud-repeat reference only preserved `model_last.pth` because the run was interrupted by power loss.
 
 ## Engineering Risks
 
@@ -37,6 +39,21 @@ Current decision:
 - `random` completed but is negative; keep it only as a control.
 - `nearest_cost` completed and is the only T3.4 mode worth carrying forward.
 - `first` remains a compatibility path; only run b1/e5 for it if a strict same-branch control is needed later.
+
+### T3.5a confidence-aware target selection is closed as a non-mainline result
+
+Observation:
+
+- `T3.5a nearest_conf` completed cloud smoke, b1/e5 training, best/last deterministic evaluation, result transfer, and local analysis.
+- `model_best.pth` reached `0.1960 / 0.2026 / 0.7080`.
+- `model_last.pth` degraded to `0.0978 / 0.0980 / 0.4750`.
+
+Current decision:
+
+- Treat T3.5a as an implemented and fully analyzed negative/partial result.
+- Keep the branch as an archive of the attempt.
+- Do not continue the next main experiment from the T3.5a branch.
+- If confidence-aware training-side selection is revisited later, reopen it as a new dedicated retry with a weaker coupling design.
 
 ### `opts.py --pnp_type` default mismatch
 
@@ -88,11 +105,14 @@ Current decision:
 - `paper2-clean baseline b1/e5` around `0.1013 / 0.0922 / 0.4920` is the official-clean fast baseline.
 - `d4ff8ca no-conf base b1/e5` around `0.1597 / 0.1585 / 0.6440` is the main KGN-main no-confidence attribution baseline.
 - `old T2 best + P3 on` around `0.2021 / 0.2088 / 0.7270`, `T2 cloud repeat model_last + P3 on` around `0.1837 / 0.1998 / 0.7530`, and `T2 local repeat model_best + P3 on` around `0.2090 / 0.2320 / 0.7430` are the primary T2 strong-baseline references.
+- `T2 cloud repeat model_last + P3 on` must be labeled carefully: it is a strong cloud-trained reference, but it is not a clean best-checkpoint reference because the run was interrupted by power loss before preserving a comparable `model_best.pth`.
 - `KGN-main internal kgnv2base b1/e5` around `0.1995 / 0.2240 / 0.7670` is retained as a historical/internal reference, not the dominant T3.4 comparison target.
 - `T2 cloud repeat model_last + P3 on` around `0.1837 / 0.1998 / 0.7530` supports that T2 is strong against official clean, but it is not yet the strictest single-variable proof.
 - `T2 cloud repeat model_last + P3 off` around `0.1618 / 0.1483 / 0.6840` shows P3 helps this checkpoint, but nofusion still remains above paper2-clean.
 - `T3.4 nearest_cost` around `0.1954 / 0.2080 / 0.7480` is positive and near the T2 strong-baseline range, but it does not yet beat all T2 references in all three metrics.
 - `T3.4 random` around `0.1096 / 0.1291 / 0.5060` is negative.
+- `T3.5a nearest_conf best` around `0.1960 / 0.2026 / 0.7080` is not good enough to replace `T3.4 nearest_cost`; it raises `GSR` only marginally while lowering `GCR` and clearly lowering `OSR`.
+- `T3.5a nearest_conf last` around `0.0978 / 0.0980 / 0.4750` shows strong late-epoch degradation and must not be used as continuation evidence.
 
 ## KGN-Pro-main Migration Risks
 

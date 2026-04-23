@@ -51,6 +51,7 @@ and log inspection. It is not the main code modification entry.
 ## Branch And Commit Rules
 
 - Start new feature, fix, validation, or documentation work from the latest confirmed branch.
+- When a branch is closed as a non-mainline result, start the next main experiment from the latest documented mainline baseline rather than stacking on the archived branch.
 - Use one branch for one clear task.
 - Keep changes small, reviewable, and reversible.
 - Use commit prefixes:

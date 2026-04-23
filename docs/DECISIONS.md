@@ -3,6 +3,38 @@
 This file records stable project decisions so future sessions do not reopen
 settled questions after context compaction.
 
+## 2026-04-24 T3.5a Is Closed And T3.5b Should Start From T3.4
+
+Decision:
+
+- `T3.5a nearest_conf` is implemented, cloud-validated, and closed as a non-mainline result.
+- `T3.5a nearest_conf` does not replace `T3.4 nearest_cost` as the current best `KGN-Pro-inspired` training-side result.
+- The next main task should be `T3.5b inference-side enhancement`.
+- `T3.5b` should start from the documented `T3.4 nearest_cost` line:
+  - `feat/t3.4-multigrasp-target-matching @ 1fb0084`
+- The active implementation branch for that next task is `feat/t3.5b-inference-side-enhancement`.
+- `feat/t3.5-conf-aware-target-selection` should be kept as an archive/result branch, not used as the default base for the next main experiment.
+
+Why:
+
+- `T3.5a nearest_conf best` reached `0.1960 / 0.2026 / 0.7080`.
+- `T3.5a nearest_conf last` degraded to `0.0978 / 0.0980 / 0.4750`.
+- Relative to `T3.4 nearest_cost = 0.1954 / 0.2080 / 0.7480`, T3.5a only gained a negligible amount on `GSR`, while losing on `GCR` and clearly losing on `OSR`.
+- Candidate-level analysis shows `nearest_conf` reduced `score_filtered`, `accepted`, and `successful_preds`, while shifting supervision toward easier/high-confidence matches.
+- Starting T3.5b from T3.4 keeps inference-side attribution clean.
+
+Consequences:
+
+- Future writeups should say:
+  - T3.5a verified that confidence-aware target selection is runnable,
+  - but the current formulation is not a mainline improvement.
+- If training-side confidence-aware selection is revisited later, it should be reopened as a new dedicated retry rather than silently continued from this branch.
+- T3.5b should first test inference-side ranking/post-process improvements without inheriting T3.5a training-side behavior.
+
+Status:
+
+- active
+
 ## 2026-04-23 T3.4 Result Interpretation Uses T2 Strong Baselines
 
 Decision:
@@ -19,6 +51,7 @@ Why:
   - old T2 best + P3 on: `0.2021 / 0.2088 / 0.7270`
   - T2 cloud repeat model_last + P3 on: `0.1837 / 0.1998 / 0.7530`
   - T2 local repeat model_best + P3 on: `0.2090 / 0.2320 / 0.7430`
+- The cloud-repeat T2 reference is strong, but it is still a `model_last.pth` reference rather than a clean best-checkpoint reference because that run was interrupted by power loss.
 - Candidate-level analysis shows T3.4 `nearest_cost` has strong geometry quality (`accepted_reproj_mean = 0.6741`) but still does not dominate every T2 reference in every metric.
 - The project goal is not to prove "prob_pose_loss alone beats T3.2b-fix"; it is to gradually build a KGN-Pro-lite path combining confidence/correspondence weighting, EPro-PnP/MC loss, probabilistic inference, x2d, and multi-grasp target matching where feasible.
 
