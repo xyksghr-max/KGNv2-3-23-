@@ -96,6 +96,52 @@ Status:
 
 - active
 
+## 2026-04-23 T3.3 Correspondence Weighting Is A Negative Ablation
+
+Decision:
+
+- T3.3a, T3.3b, and T3.3c are recorded as correspondence-weighting ablations, not as the next verified mainline.
+- T3.3c detached per-keypoint `w2d` is considered complete as an engineering experiment, but not effective under the b1/e5 attribution budget.
+
+Why:
+
+- T3.3a detached scalar `w2d` was stable but did not beat T2.
+- T3.3b gradient-enabled scalar `w2d` verified the gradient path but degraded performance.
+- T3.3c detached per-keypoint `w2d` completed smoke, b1/e5 train+val, and best/last local evaluation, but both best and last evaluated to `0.1232 / 0.1456 / 0.4910`.
+
+Consequences:
+
+- T3.3c should be written as a stable but negative ablation.
+- Do not continue new feature work directly from T3.3c unless the goal is explicitly a combined variant.
+- Do not run more T3.3c fusion-grid or long-budget tests before a new result justifies it.
+
+Status:
+
+- active
+
+## 2026-04-23 T3.4 Branch Starts From 134cd27
+
+Decision:
+
+- Create `feat/t3.4-multigrasp-target-matching` from `134cd27 feat: stabilize probabilistic pose auxiliary loss`.
+- Use T2 as the strongest comparison baseline, but not as the direct T3.4 code base.
+
+Why:
+
+- `134cd27` already contains the clean training-side EPro-PnP / Monte Carlo pose auxiliary loss needed for T3.4.
+- It avoids carrying T3.3a/T3.3b/T3.3c `w2d` changes into the first T3.4 attribution run.
+- T2 does not contain `prob_pose_loss`, so starting from T2 would require re-migrating T3.1/T3.2 machinery and would blur attribution.
+
+Consequences:
+
+- T3.4 first implementation should focus on training-side multi-grasp target selection inside `ProbPoseAuxLoss`.
+- The default first modes are `first` for compatibility and `random` for a low-risk new target-selection path; `nearest_cost` can follow if `random` is stable.
+- `test.py`, `decode.py`, `keypoint_graspnet.py`, and `pose_recover/` should remain unchanged for T3.4-lite.
+
+Status:
+
+- active
+
 ## 2026-04-19 KGN-main Remains The Main Repository
 
 Decision:

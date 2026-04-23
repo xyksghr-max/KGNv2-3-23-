@@ -104,6 +104,16 @@
 
 ## 5. 五个重点资产逐项审计
 
+### 5.0 2026-04-23 迁移状态更新
+
+截至当前，`T1` 的资产边界仍然成立，但部分资产已经在后续 `T` 系列中被验证过：
+
+- `MonteCarloPoseLoss（蒙特卡洛位姿损失）` 与 `EPro-PnP（概率 PnP 位姿求解）` 已经以最小 vendor 方式进入 `KGN-main` 的 T3.1/T3.2 训练侧原型。
+- `w2d（二维对应权重）` 思路已经分别以 `T3.3a scalar_conf（标量置信度）`、`T3.3b gradient scalar_conf（带梯度标量置信度）`、`T3.3c kpt_conf（逐关键点置信度）` 做过短预算验证。
+- `T3.3b/T3.3c` 结果为负向消融，说明不应继续整体迁移 KGN-Pro-main 的 w2d/x2d 相关链路。
+- `sample/grasp_pose.py` 中的 multi-grasp target supervision（多抓取目标监督）仍只作为参考逻辑，不直接复制；下一步 `T3.4` 只会在 `ProbPoseAuxLoss（概率姿态辅助损失）` 附近做最小 target selection（目标选择）实验。
+- 测试、推理、pose recovery（位姿恢复）主链仍不从 `KGN-Pro-main` 迁移。
+
 ### 5.1 `monte_carlo_pose_loss.py`
 
 文件：
@@ -331,6 +341,12 @@
 - GT matching 方案
 - 变长处理
 - batch 对齐策略
+
+2026-04-23 更新：
+
+- `T3.4` 会先做比完整 `T4` 更小的 target selection / multi-grasp matching（目标选择 / 多抓取匹配）实验。
+- 该实验从 `134cd27` 创建分支，不从 T3.3c 继续堆叠。
+- 该实验不复制 `KGN-Pro-main/src/lib/datasets/sample/grasp_pose.py` 的固定 batch 打包方式，只参考“多个有效 GT grasp 需要合理选择”的思想。
 
 ## 8. T1 通过标准核对
 

@@ -18,7 +18,8 @@ Last updated: 2026-04-23
 - Do not mix `model_best.pth` and `model_last.pth` as strict same-class evidence without explicitly saying which one was used.
 - Do not write b1/e5 quick attribution numbers as final full-budget thesis results.
 - Do not describe T3.3b gradient-enabled scalar w2d as an effective improvement; it verified the gradient path but degraded b1/e5 performance.
-- Do not describe T3.3c-lite detached per-keypoint w2d as effective before cloud smoke, b1/e5 training, and controlled evaluation complete.
+- Do not describe T3.3c-lite detached per-keypoint w2d as effective. Cloud smoke, b1/e5 training, and local evaluation completed, but the result `0.1232 / 0.1456 / 0.4910` is a negative ablation.
+- Do not start T3.4 from T3.3c unless explicitly testing a combined T3.3c+T3.4 variant. The default T3.4 branch should start from `134cd27`.
 
 ## Engineering Risks
 
@@ -64,9 +65,12 @@ Current decision:
 - `conf_fusion` is P3 inference behavior. Turning it off tests P3-off/nofusion; it does not remove all P1/P2/T2-era code path differences.
 - Smoke train/test only proves that the link runs; it does not prove algorithmic improvement.
 - T3.3c-lite adds a training-side `kpt_conf` head and detached per-keypoint w2d source, but the test/inference chain still does not consume `kpt_conf`.
+- T3.3c b1/e5 completed successfully and was stable, but its `model_best` and `model_last` both evaluated to `0.1232 / 0.1456 / 0.4910`, below T3.3a, T3.2b-fix, and T2.
+- For T3.4, do not confuse "T2 is the strongest comparison baseline" with "T2 is the best code base to branch from"; T2 lacks `prob_pose_loss`, so the clean T3.4 code base is `134cd27`.
+- T3.4 target matching must be training-side only unless a later task explicitly changes the inference chain.
 - Cloud-generated `ps_grasp_multi_1k` data is not trusted and should not be used as the current formal data source.
 - Current trusted cloud data is the local-uploaded `ps_grasp_single_1k`.
-- Formal T3.1 validation still needs controlled training, testing, and result analysis against a strong baseline.
+- Formal T3-series claims still need controlled training, testing, and result analysis against a strong baseline; T3.3c is not such a claim.
 
 ## Current Attribution Risks
 
@@ -74,7 +78,7 @@ Current decision:
 - `KGN-main internal kgnv2base b1/e5` around `0.1995 / 0.2240 / 0.7670` is a strong internal baseline whose source is still being attributed.
 - `T2 cloud repeat model_last + P3 on` around `0.1837 / 0.1998 / 0.7530` supports that T2 is strong against official clean, but it is not yet the strictest single-variable proof.
 - `T2 cloud repeat model_last + P3 off` around `0.1618 / 0.1483 / 0.6840` shows P3 helps this checkpoint, but nofusion still remains above paper2-clean.
-- The current `d4ff8ca no-conf base` experiment is needed before deciding whether `paper2-clean + T2-only` migration is necessary.
+- T3.4 should compare against T2, T3.2b-fix, T3.3a, T3.3b, and T3.3c under the same b1/e5 attribution setting before any new effectiveness claim.
 
 ## KGN-Pro-main Migration Risks
 

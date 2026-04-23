@@ -2,49 +2,74 @@
 
 Last updated: 2026-04-23
 
-## Task
+## Current Task
 
-Implement T3.3c-lite: detached per-keypoint w2d for the probabilistic pose
-auxiliary loss.
+Close T3.3c-lite documentation and prepare T3.4-lite multi-grasp target
+matching.
 
-## Goal
+## Current Code State
 
-Move from T3.3a/T3.3b scalar confidence w2d to a KGN-Pro-inspired but
-KGN-main-compatible per-keypoint correspondence weighting path. The first
-version must keep pose-loss gradients detached from the new keypoint confidence
-head by default.
+- Current branch: `feat/t3.3c-detached-per-kpt-w2d`.
+- Current commit: `d3d548f feat: add detached per-keypoint pose weights`.
+- T3.3c code has been committed and pushed.
+- Known untracked local files remain user/local files and must not be cleaned:
+  - `KGNv2-Sim PROJECT_PROGRESS.md`
+  - `implementation_plan.md`
+  - `src/lib/third_party/__init__.py`
 
-## In Scope
+## T3.3c Result Summary
 
-- Create branch `feat/t3.3c-detached-per-kpt-w2d` from
-  `feat/t3.3b-gated-gradient-w2d @ 99f1e6d`.
-- Add optional `kpt_conf` head controlled by `--kpt_conf_branch`.
-- Add `KptConfLoss` with detached per-keypoint geometry proxy supervision.
-- Add `--prob_pose_w2d_source scalar_conf|kpt_conf`.
-- Allow `ProbPoseAuxLoss` to build detached per-keypoint w2d from `kpt_conf`.
-- Keep `src/test.py`, `src/keypoint_graspnet.py`, `decode.py`, and
-  `pose_recover/` unchanged.
+T3.3c-lite added a training-side `kpt_conf` head, `KptConfLoss`, and detached
+per-keypoint `w2d` source for `ProbPoseAuxLoss`.
 
-## Out Of Scope
+Completed checks and experiments:
 
-- No wholesale migration from `KGN-Pro-main`.
-- No KGN-Pro-main `base_trainer.py`, `test.py`, or `pose_recover/` replacement.
-- No test/inference-chain change.
-- No claim that T3.3c-lite is effective before cloud smoke/formal evaluation.
-- No submission of `data/`, `exp/`, checkpoints, tarballs, or large logs.
+- Local static checks and tensor checks passed before commit.
+- Cloud smoke b1/e1 completed successfully.
+- Cloud b1/e5 train+val completed for:
+  `t33c_kptw2d_detach_b1_single_r512_e5_val1_p20_g4_nowarm`.
+- Local evaluation completed for `model_best.pth` and `model_last.pth`.
 
-## Completion Criteria
+T3.3c b1/e5 test result:
 
-- Local static checks pass:
-  - `python -m py_compile src/lib/opts.py src/lib/trains/grasp_pose.py src/lib/models/prob_pose_aux_loss.py`
-  - grep confirms new switches and diagnostics.
-- Local lightweight tensor checks pass in the `kgnv2` environment.
-- Git diff only touches intended source/doc files.
-- User receives cloud smoke and b1/e5 follow-up commands after commit/push.
+- `model_best.pth`, epoch 5: `0.1232 / 0.1456 / 0.4910`.
+- `model_last.pth`, epoch 5: `0.1232 / 0.1456 / 0.4910`.
 
-## Current Interpretation
+Interpretation:
 
-T3.3b proved that gradient-enabled scalar w2d is a useful diagnostic path but
-hurts b1/e5 performance. T3.3c-lite should therefore be treated as a safer
-detached per-keypoint correspondence-weighting experiment, not as an already
-verified improvement.
+- Engineering link is stable.
+- `prob_pose_invalid_raw_rate = 0` and `prob_pose_w2d_grad_rate = 0` confirm
+  the detached per-keypoint `w2d` path behaved as intended.
+- Performance is lower than T3.3a, T3.2b-fix, and T2 under the recorded b1/e5
+  attribution setting.
+- T3.3c must be recorded as a stable but negative ablation, not an effective
+  improvement.
+
+## Next Task
+
+Create a new branch for T3.4-lite from the clean T3.2b-fix / T3 base point:
+
+```bash
+git switch -c feat/t3.4-multigrasp-target-matching 134cd27
+```
+
+Rationale:
+
+- `134cd27` already contains the stable training-side EPro-PnP / Monte Carlo
+  pose auxiliary loss base.
+- It does not include T3.3a/T3.3b/T3.3c `w2d` changes, so T3.4 can isolate
+  multi-grasp target matching without carrying the negative T3.3c head.
+- T2 remains the strongest comparison baseline, but T2 is not the direct code
+  base for T3.4 because it does not contain `prob_pose_loss`.
+
+## T3.4-lite Intended Scope
+
+- Training-side target selection only.
+- Add a controlled target selection mode in `ProbPoseAuxLoss`, such as:
+  - `first`: current fixed first-k behavior.
+  - `random`: random valid GT grasp sampling.
+  - `nearest_cost`: nearest-cost / nearest-neighbor style target selection.
+- Keep `test.py`, `decode.py`, `keypoint_graspnet.py`, and `pose_recover/`
+  unchanged.
+- Do not migrate `KGN-Pro-main` as a whole.
+- Do not submit `data/`, `exp/`, checkpoints, tarballs, or large logs.
