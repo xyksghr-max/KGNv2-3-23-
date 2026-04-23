@@ -1,7 +1,30 @@
 # KGN-main Current Status
 
-Last updated: 2026-04-21
-Status commit at update: `0c32bdb docs: add agent memory pack`
+Last updated: 2026-04-23
+Status commit at update: pending T3.4 local commit
+
+## Branch-Local T3.4 Status
+
+- Current local branch: `feat/t3.4-multigrasp-target-matching`.
+- Branch base: `134cd27 fix: stabilize probabilistic pose auxiliary loss`.
+- Branch role: T3.4 Multi-Grasp Target Matching training-side experiment.
+- Code status: local implementation complete; static checks pass.
+- Cloud status: no T3.4 smoke or b1/e5 run has been started yet.
+- Scope guard: this branch intentionally does not include the T3.3c code stack.
+
+Known local untracked files remain user/local files and must not be deleted or submitted:
+
+- `KGNv2-Sim PROJECT_PROGRESS.md`
+- `implementation_plan.md`
+- `src/lib/third_party/__init__.py`
+
+T3.4 touched only:
+
+- `src/lib/opts.py`
+- `src/lib/models/prob_pose_aux_loss.py`
+- `src/lib/trains/grasp_pose.py`
+
+The older status below is retained as historical context from the `134cd27` lineage.
 
 ## Current Repositories
 

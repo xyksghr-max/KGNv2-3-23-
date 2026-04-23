@@ -337,6 +337,11 @@ class opts(object):
                                  help="Clamp the differentiable Monte Carlo pose sample logweights to [-clip, clip] for numerical stability.")
         self.parser.add_argument('--prob_pose_max_grasps', type=int, default=4,
                                  help="Maximum valid grasps per batch used by the probabilistic pose auxiliary loss.")
+        self.parser.add_argument('--prob_pose_target_mode', type=str, default="first",
+                                 choices=["first", "random", "nearest_cost"],
+                                 help="Target selection mode for the probabilistic pose auxiliary loss.")
+        self.parser.add_argument('--prob_pose_target_topk', type=int, default=4,
+                                 help="Candidate pool size for nearest-cost probabilistic pose target selection.")
         self.parser.add_argument('--scale_kpts_mode', type=int, default=0,
                                 help="Scaled keypoints mode. 0 for No and 1 for yes")
         self.parser.add_argument('--scale_coeff_k', type=float, default=1,

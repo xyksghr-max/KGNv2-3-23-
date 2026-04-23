@@ -69,6 +69,16 @@ class ProbPoseAuxLoss(nn.Module):
         self.open_width_canonical = opt.open_width_canonical
         self.min_open_width = opt.min_open_width
         self.max_pose_grasps = max(1, int(getattr(opt, 'prob_pose_max_grasps', 4)))
+        self.target_mode = getattr(opt, 'prob_pose_target_mode', 'first')
+        self.target_mode_to_id = {
+            'first': 0,
+            'random': 1,
+            'nearest_cost': 2,
+        }
+        if self.target_mode not in self.target_mode_to_id:
+            raise ValueError("Unsupported prob_pose_target_mode: {}".format(self.target_mode))
+        self.target_mode_id = self.target_mode_to_id[self.target_mode]
+        self.target_topk = max(1, int(getattr(opt, 'prob_pose_target_topk', 4)))
         self.loss_soft_cap = float(getattr(opt, 'prob_pose_soft_cap', 5.0))
         self.max_cost_mean = float(getattr(opt, 'prob_pose_max_cost_mean', 3.0))
         self.max_raw_loss_abs = 20.0
@@ -140,6 +150,74 @@ class ProbPoseAuxLoss(nn.Module):
     def _zero_stats(self, zero, *values):
         return tuple(zero.detach() + float(value) for value in values)
 
+    def _select_target_indices(self, valid_indices, target_cost=None):
+        valid_total = valid_indices.sum()
+        valid_total_int = int(valid_total.item())
+        cost_zero = valid_total.detach().float() * 0.0
+        if valid_total_int == 0:
+            return valid_indices, valid_total, valid_total, cost_zero
+
+        valid_coords = valid_indices.nonzero(as_tuple=False)
+        if self.target_mode == 'first':
+            selected_count_int = min(valid_total_int, self.max_pose_grasps)
+            selected_coords = valid_coords[:selected_count_int]
+            select_cost_mean = cost_zero
+        elif self.target_mode == 'random':
+            selected_count_int = min(valid_total_int, self.max_pose_grasps)
+            perm = torch.randperm(valid_total_int, device=valid_coords.device)
+            selected_coords = valid_coords[perm[:selected_count_int]]
+            select_cost_mean = cost_zero
+        else:
+            if target_cost is None:
+                raise ValueError("nearest_cost target selection requires target_cost")
+            valid_cost = target_cost[valid_indices].detach()
+            valid_cost = torch.nan_to_num(
+                valid_cost, nan=1e6, posinf=1e6, neginf=1e6
+            )
+            topk_count = min(valid_total_int, self.target_topk)
+            selected_count_int = min(topk_count, self.max_pose_grasps)
+            _, order = torch.topk(valid_cost, k=topk_count, largest=False)
+            selected_order = order[:selected_count_int]
+            selected_coords = valid_coords[selected_order]
+            select_cost_mean = valid_cost[selected_order].mean()
+
+        selected_indices = torch.zeros_like(valid_indices)
+        if selected_coords.numel() > 0:
+            selected_indices[selected_coords[:, 0], selected_coords[:, 1]] = True
+        selected_count = selected_indices.sum()
+        return selected_indices, valid_total, selected_count, select_cost_mean
+
+    def _compute_detached_keypoint_cost(
+        self, kpt_pred_img, ct_int, ori_clses, pose_centers, pose_scales, batch
+    ):
+        if 'reg' in batch:
+            reg_gt = batch['reg'].float()
+        else:
+            reg_gt = torch.zeros_like(ct_int)
+        center_gt = ct_int + reg_gt
+
+        target_offsets = self._select_orientation_offsets(
+            batch['kpts_center_offset'].float(), ori_clses
+        )
+        target_mask = self._select_orientation_offsets(
+            batch['kpts_center_mask'].float(), ori_clses
+        ).float()
+        kpt_gt_out = center_gt.unsqueeze(2) + target_offsets
+        kpt_gt_img = self._output_to_image_coords(kpt_gt_out, pose_centers, pose_scales)
+
+        coord_valid_count = target_mask.sum(dim=(2, 3))
+        keypoint_cost = (
+            torch.abs(kpt_pred_img - kpt_gt_img) * target_mask
+        ).sum(dim=(2, 3)) / (coord_valid_count + 1e-4)
+        keypoint_cost = torch.where(
+            coord_valid_count > 0,
+            keypoint_cost,
+            keypoint_cost.new_full(keypoint_cost.shape, 1e6),
+        )
+        return torch.nan_to_num(
+            keypoint_cost.detach(), nan=1e6, posinf=1e6, neginf=1e6
+        )
+
     def forward(self, reg_map, kpts_center_output, batch):
         ori_clses = batch['ori_clses'].long()
         ct_int_x = (batch['ind'] % self.output_res).float()
@@ -172,19 +250,25 @@ class ProbPoseAuxLoss(nn.Module):
                 1.0,  # no_valid_rate
                 0.0,  # invalid_raw_rate
                 0.0,  # too_large_raw_rate
+                0.0,  # target_valid_total
+                0.0,  # target_selected_count
+                0.0,  # target_select_cost_mean
+                self.target_mode_id,  # target_mode_id
             )
             return (zero,) + stats
-
-        if valid_count.item() > self.max_pose_grasps:
-            limited_indices = torch.zeros_like(valid_indices)
-            selected = valid_indices.nonzero(as_tuple=False)[:self.max_pose_grasps]
-            limited_indices[selected[:, 0], selected[:, 1]] = True
-            valid_indices = limited_indices
-            valid_count = valid_indices.sum()
 
         pose_centers = batch['pose_loss_meta_c'].float()
         pose_scales = batch['pose_loss_meta_s'].float().view(-1, 1)
         kpt_pred_img = self._output_to_image_coords(kpt_pred_out, pose_centers, pose_scales)
+
+        target_select_cost = None
+        if self.target_mode == 'nearest_cost':
+            target_select_cost = self._compute_detached_keypoint_cost(
+                kpt_pred_img, ct_int, ori_clses, pose_centers, pose_scales, batch
+            )
+        valid_indices, target_valid_total, target_selected_count, target_select_cost_mean = \
+            self._select_target_indices(valid_indices, target_select_cost)
+        valid_count = target_selected_count
 
         kpt_pred_img = kpt_pred_img[valid_indices]
         pose_gt_mat = batch['grasp_pose_cam'].float()[valid_indices]
@@ -274,6 +358,11 @@ class ProbPoseAuxLoss(nn.Module):
                 0.0,  # no_valid_rate
                 1.0,  # invalid_raw_rate
                 0.0,  # too_large_raw_rate
+            ) + (
+                target_valid_total.to(dtype=zero.dtype).detach(),
+                target_selected_count.to(dtype=zero.dtype).detach(),
+                target_select_cost_mean.to(dtype=zero.dtype).detach(),
+                zero.detach() + float(self.target_mode_id),
             )
             return (zero,) + stats
 
@@ -287,6 +376,9 @@ class ProbPoseAuxLoss(nn.Module):
             loss = self.loss_soft_cap * torch.tanh(loss / self.loss_soft_cap)
         valid_count_tensor = valid_count.to(dtype=loss.dtype)
         zero_stat = loss.detach() * 0
+        target_valid_total_tensor = target_valid_total.to(dtype=loss.dtype).detach()
+        target_selected_count_tensor = target_selected_count.to(dtype=loss.dtype).detach()
+        target_select_cost_mean = target_select_cost_mean.to(dtype=loss.dtype).detach()
         return (
             loss,
             valid_count_tensor.detach(),
@@ -297,4 +389,8 @@ class ProbPoseAuxLoss(nn.Module):
             zero_stat,  # no_valid_rate
             zero_stat,  # invalid_raw_rate
             zero_stat + (1.0 if too_large_raw else 0.0),
+            target_valid_total_tensor,
+            target_selected_count_tensor,
+            target_select_cost_mean,
+            zero_stat + float(self.target_mode_id),
         )

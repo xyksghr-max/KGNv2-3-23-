@@ -4,10 +4,12 @@ This file records known project risks and deferred issues. It is not a bug track
 for every experiment failure; keep it focused on risks that future Codex/agent
 sessions must not forget.
 
-Last updated: 2026-04-21
+Last updated: 2026-04-23
 
 ## Current High-Risk Misstatements
 
+- Do not describe T3.4 as effective before cloud smoke, b1/e5 training, and best/last evaluation are complete.
+- Do not compare T3.4 `random` and `nearest_cost` runs against older results unless the data source, training budget, and inference settings match.
 - Do not say T3.1 is verified effective. It is implemented and shows recovery-style positive signal relative to `ctrl_t2off`, but it has not beaten the strong internal baseline.
 - Do not call `KGN-main internal kgnv2base` the official `paper2-clean` baseline.
 - Do not describe `paper2-clean baseline` vs `KGN-main T2` as a strict single-variable T2 ablation.
@@ -19,6 +21,19 @@ Last updated: 2026-04-21
 - Do not write b1/e5 quick attribution numbers as final full-budget thesis results.
 
 ## Engineering Risks
+
+### T3.4 target selection is training-side only
+
+Observation:
+
+- T3.4 adds `first`, `random`, and `nearest_cost` target selection inside `ProbPoseAuxLoss`.
+- It does not change `test.py`, `decode.py`, `keypoint_graspnet.py`, or `pose_recover/`.
+
+Current decision:
+
+- Treat T3.4 as a small training-side attribution experiment until cloud results say otherwise.
+- The `first` mode is the compatibility path and should be used as the first smoke check.
+- If `nearest_cost` is unstable, stop promoting it and continue only with `random`.
 
 ### `opts.py --pnp_type` default mismatch
 

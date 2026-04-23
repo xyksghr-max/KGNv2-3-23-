@@ -3,6 +3,31 @@
 This file records stable project decisions so future sessions do not reopen
 settled questions after context compaction.
 
+## 2026-04-23 T3.4 Starts From Clean T3.2b-Fix Lineage
+
+Decision:
+
+- T3.4 starts from `134cd27 fix: stabilize probabilistic pose auxiliary loss`.
+- The T3.4 branch is `feat/t3.4-multigrasp-target-matching`.
+- T3.4 implements only training-side target selection for `ProbPoseAuxLoss`.
+
+Why:
+
+- T3.3b and T3.3c were useful negative/diagnostic experiments but are not the best base for a new target-matching test.
+- Starting from `134cd27` keeps the experiment closer to the stable T3.2b-fix line.
+- Target matching is a smaller and cleaner KGN-Pro-inspired idea than migrating inference or pose-recovery chains.
+
+Consequences:
+
+- Do not stack T3.4 on top of T3.3c.
+- Do not change `test.py`, `decode.py`, `keypoint_graspnet.py`, or `pose_recover/` for T3.4.
+- Evaluate `first`, `random`, and `nearest_cost` as separate experiment modes.
+- Treat all b1/e5 results as short-budget attribution until larger validation exists.
+
+Status:
+
+- active
+
 ## 2026-04-19 Main Workspace And Workflow
 
 Decision:

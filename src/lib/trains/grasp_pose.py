@@ -153,6 +153,10 @@ class GraspPoseLoss_clf(torch.nn.Module):
         prob_pose_no_valid_rate = 0
         prob_pose_invalid_raw_rate = 0
         prob_pose_too_large_raw_rate = 0
+        prob_pose_target_valid_total = 0
+        prob_pose_target_selected_count = 0
+        prob_pose_target_select_cost_mean = 0
+        prob_pose_target_mode_id = 0
         prob_pose_active_weight = 0
 
         kpts_center_loss, hm_kpts_loss, kpts_offset_loss = 0, 0, 0
@@ -238,22 +242,34 @@ class GraspPoseLoss_clf(torch.nn.Module):
                     active_prob_pose_weight = opt.prob_pose_weight * min(
                         max(ramp_progress, 0.0), 1.0
                     )
-                prob_pose_loss_this, prob_pose_valid_count_this, prob_pose_cost_mean_this, \
-                    prob_pose_raw_loss_this, prob_pose_high_cost_rate_this, \
-                    prob_pose_skip_rate_this, prob_pose_no_valid_rate_this, \
-                    prob_pose_invalid_raw_rate_this, prob_pose_too_large_raw_rate_this = self.crit_prob_pose(
-                    output.get('reg', None), output['kpts_center_offset'], batch
-                ) if active_prob_pose_weight > 0 else (
-                    output['hm'].sum() * 0,
-                    output['hm'].sum().detach() * 0,
-                    output['hm'].sum().detach() * 0,
-                    output['hm'].sum().detach() * 0,
-                    output['hm'].sum().detach() * 0,
-                    output['hm'].sum().detach() * 0,
-                    output['hm'].sum().detach() * 0,
-                    output['hm'].sum().detach() * 0,
-                    output['hm'].sum().detach() * 0,
-                )
+                if active_prob_pose_weight > 0:
+                    prob_pose_loss_this, prob_pose_valid_count_this, prob_pose_cost_mean_this, \
+                        prob_pose_raw_loss_this, prob_pose_high_cost_rate_this, \
+                        prob_pose_skip_rate_this, prob_pose_no_valid_rate_this, \
+                        prob_pose_invalid_raw_rate_this, prob_pose_too_large_raw_rate_this, \
+                        prob_pose_target_valid_total_this, prob_pose_target_selected_count_this, \
+                        prob_pose_target_select_cost_mean_this, prob_pose_target_mode_id_this = \
+                        self.crit_prob_pose(
+                            output.get('reg', None), output['kpts_center_offset'], batch
+                        )
+                else:
+                    zero_loss = output['hm'].sum() * 0
+                    zero_stat = output['hm'].sum().detach() * 0
+                    prob_pose_loss_this = zero_loss
+                    prob_pose_valid_count_this = zero_stat
+                    prob_pose_cost_mean_this = zero_stat
+                    prob_pose_raw_loss_this = zero_stat
+                    prob_pose_high_cost_rate_this = zero_stat
+                    prob_pose_skip_rate_this = zero_stat
+                    prob_pose_no_valid_rate_this = zero_stat
+                    prob_pose_invalid_raw_rate_this = zero_stat
+                    prob_pose_too_large_raw_rate_this = zero_stat
+                    prob_pose_target_valid_total_this = zero_stat
+                    prob_pose_target_selected_count_this = zero_stat
+                    prob_pose_target_select_cost_mean_this = zero_stat
+                    prob_pose_target_mode_id_this = output['hm'].new_tensor(
+                        float(getattr(self.crit_prob_pose, 'target_mode_id', 0))
+                    ).detach()
                 prob_pose_loss += prob_pose_loss_this / opt.num_stacks
                 prob_pose_valid_count += prob_pose_valid_count_this / opt.num_stacks
                 prob_pose_cost_mean += prob_pose_cost_mean_this / opt.num_stacks
@@ -263,6 +279,16 @@ class GraspPoseLoss_clf(torch.nn.Module):
                 prob_pose_no_valid_rate += prob_pose_no_valid_rate_this / opt.num_stacks
                 prob_pose_invalid_raw_rate += prob_pose_invalid_raw_rate_this / opt.num_stacks
                 prob_pose_too_large_raw_rate += prob_pose_too_large_raw_rate_this / opt.num_stacks
+                prob_pose_target_valid_total += (
+                    prob_pose_target_valid_total_this / opt.num_stacks
+                )
+                prob_pose_target_selected_count += (
+                    prob_pose_target_selected_count_this / opt.num_stacks
+                )
+                prob_pose_target_select_cost_mean += (
+                    prob_pose_target_select_cost_mean_this / opt.num_stacks
+                )
+                prob_pose_target_mode_id += prob_pose_target_mode_id_this / opt.num_stacks
                 prob_pose_active_weight += (
                     output['hm'].new_tensor(active_prob_pose_weight) / opt.num_stacks
                 )
@@ -291,6 +317,10 @@ class GraspPoseLoss_clf(torch.nn.Module):
                     "prob_pose_no_valid_rate": prob_pose_no_valid_rate,
                     "prob_pose_invalid_raw_rate": prob_pose_invalid_raw_rate,
                     "prob_pose_too_large_raw_rate": prob_pose_too_large_raw_rate,
+                    "prob_pose_target_valid_total": prob_pose_target_valid_total,
+                    "prob_pose_target_selected_count": prob_pose_target_selected_count,
+                    "prob_pose_target_select_cost_mean": prob_pose_target_select_cost_mean,
+                    "prob_pose_target_mode_id": prob_pose_target_mode_id,
                     "prob_pose_active_weight": prob_pose_active_weight
                     }
 
@@ -329,6 +359,10 @@ class GraspPoseTrainer(BaseTrainer):
             loss_states.append("prob_pose_no_valid_rate")
             loss_states.append("prob_pose_invalid_raw_rate")
             loss_states.append("prob_pose_too_large_raw_rate")
+            loss_states.append("prob_pose_target_valid_total")
+            loss_states.append("prob_pose_target_selected_count")
+            loss_states.append("prob_pose_target_select_cost_mean")
+            loss_states.append("prob_pose_target_mode_id")
             loss_states.append("prob_pose_active_weight")
 
         loss = GraspPoseLoss_clf(opt)
