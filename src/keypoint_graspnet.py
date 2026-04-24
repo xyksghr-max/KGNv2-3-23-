@@ -84,6 +84,7 @@ class KeypointGraspNet():
         kpts_keep = []
         centers_keep = []
         scales_keep = []
+        conf_terms_keep = []
         analysis = {
             "decoded_candidates": int(detect_stats["decoded_candidates"]),
             "score_filtered_candidates": int(detect_stats["score_filtered_candidates"]),
@@ -91,11 +92,16 @@ class KeypointGraspNet():
             "pnp_failed": 0,
             "scale_refine_failed": 0,
             "reproj_filtered": 0,
+            "pre_quality_candidates": 0,
+            "quality_filtered": 0,
             "accepted_candidates": 0,
             "accepted_scores": [],
             "accepted_confidences": [],
             "accepted_reprojection_errors": [],
+            "accepted_quality_scores": [],
             "accepted_scales": [],
+            "post_pnp_score_type": self.opt.post_pnp_score_type,
+            "post_pnp_keep_topk": int(self.opt.post_pnp_keep_topk),
         }
 
         for i in range(N_grasps):
@@ -161,8 +167,11 @@ class KeypointGraspNet():
                 kpts_keep.append(kpts[i, :, :])
                 reproj_errors.append(reprojectionError)
                 centers_keep.append(centers[i])
-                if confidences.size > 0:
+                if self.opt.conf_branch and confidences.size > 0:
                     analysis["accepted_confidences"].append(confidences[i])
+                    conf_terms_keep.append(confidences[i])
+                else:
+                    conf_terms_keep.append(1.0)
                 if self.opt.scale_kpts_mode:
                     scales_keep.append(scale)
                     analysis["accepted_scales"].append(scale)
@@ -171,6 +180,32 @@ class KeypointGraspNet():
             else:
                 analysis["reproj_filtered"] += 1
 
+        pre_quality_candidates = len(locations)
+        quality_scores_all = self._compute_post_pnp_quality_scores(
+            scores_keep, reproj_errors, conf_terms_keep
+        )
+        keep_indices, quality_filtered = self._get_post_pnp_keep_indices(quality_scores_all)
+
+        def _select(values):
+            return [values[int(idx)] for idx in keep_indices]
+
+        locations = _select(locations)
+        quaternions = _select(quaternions)
+        widths = _select(widths)
+        scores_keep = _select(scores_keep)
+        kpts_keep = _select(kpts_keep)
+        reproj_errors = _select(reproj_errors)
+        centers_keep = _select(centers_keep)
+        if len(scales_keep) == pre_quality_candidates:
+            scales_keep = _select(scales_keep)
+            analysis["accepted_scales"] = _select(analysis["accepted_scales"])
+        if len(analysis["accepted_confidences"]) == pre_quality_candidates:
+            analysis["accepted_confidences"] = _select(analysis["accepted_confidences"])
+        analysis["accepted_scores"] = _select(analysis["accepted_scores"])
+        analysis["accepted_reprojection_errors"] = _select(analysis["accepted_reprojection_errors"])
+        analysis["accepted_quality_scores"] = quality_scores_all[keep_indices].tolist()
+        analysis["pre_quality_candidates"] = pre_quality_candidates
+        analysis["quality_filtered"] = int(quality_filtered)
         analysis["accepted_candidates"] = len(locations)
         
         if not return_all:
@@ -181,6 +216,50 @@ class KeypointGraspNet():
                 np.array(scores_keep), \
                 np.array(reproj_errors), np.array(centers_keep), analysis
                 
+    def _compute_post_pnp_quality_scores(self, scores, reproj_errors, conf_terms):
+        scores = np.asarray(scores, dtype=np.float32).reshape(-1)
+        if scores.size == 0:
+            return scores
+
+        score_type = getattr(self.opt, "post_pnp_score_type", "none")
+        if score_type == "none":
+            return scores.copy()
+
+        reproj_errors = np.asarray(reproj_errors, dtype=np.float32).reshape(-1)
+        reproj_temp = float(self.opt.post_pnp_reproj_temp)
+        reproj_quality = np.exp(-reproj_errors / reproj_temp)
+        quality_scores = scores * reproj_quality
+
+        if score_type == "conf_reproj":
+            conf_terms = np.asarray(conf_terms, dtype=np.float32).reshape(-1)
+            if conf_terms.size != scores.size:
+                conf_terms = np.ones_like(scores, dtype=np.float32)
+            conf_weight = float(self.opt.post_pnp_conf_weight)
+            quality_scores = quality_scores * ((1.0 - conf_weight) + conf_weight * conf_terms)
+
+        return np.nan_to_num(quality_scores, nan=-np.inf, posinf=np.inf, neginf=-np.inf)
+
+    def _get_post_pnp_keep_indices(self, quality_scores):
+        quality_scores = np.asarray(quality_scores, dtype=np.float32).reshape(-1)
+        keep_indices = np.arange(quality_scores.size, dtype=np.int64)
+        quality_filtered = 0
+
+        quality_th = self.opt.post_pnp_quality_th
+        if quality_th is not None and keep_indices.size > 0:
+            quality_mask = quality_scores[keep_indices] >= float(quality_th)
+            quality_filtered += int((~quality_mask).sum())
+            keep_indices = keep_indices[quality_mask]
+
+        keep_topk = int(self.opt.post_pnp_keep_topk)
+        if keep_topk > 0 and keep_indices.size > 0:
+            order = np.argsort(-quality_scores[keep_indices], kind="mergesort")
+            keep_indices = keep_indices[order]
+            if keep_indices.size > keep_topk:
+                quality_filtered += int(keep_indices.size - keep_topk)
+                keep_indices = keep_indices[:keep_topk]
+
+        return keep_indices, quality_filtered
+
 
     def _generate_kpts(self, input):
         ########## get the keypoint prediction

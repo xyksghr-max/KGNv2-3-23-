@@ -82,6 +82,7 @@ def summarize_records(records, avg_spf):
         "pnp_failed_total": 0,
         "scale_refine_failed_total": 0,
         "reproj_filtered_total": 0,
+        "quality_filtered_total": 0,
         "accepted_candidates_total": 0,
         "images_with_any_prediction": 0,
         "images_with_any_eval_success": 0,
@@ -92,6 +93,7 @@ def summarize_records(records, avg_spf):
     score_pool = []
     scale_pool = []
     confidence_pool = []
+    quality_pool = []
 
     for record in records:
         summary["decoded_candidates_total"] += record.get("decoded_candidates", 0)
@@ -100,6 +102,7 @@ def summarize_records(records, avg_spf):
         summary["pnp_failed_total"] += record.get("pnp_failed", 0)
         summary["scale_refine_failed_total"] += record.get("scale_refine_failed", 0)
         summary["reproj_filtered_total"] += record.get("reproj_filtered", 0)
+        summary["quality_filtered_total"] += record.get("quality_filtered", 0)
         summary["accepted_candidates_total"] += record.get("accepted_candidates", 0)
         summary["eval_successful_prediction_total"] += record.get("eval_successful_prediction_count", 0)
 
@@ -112,6 +115,7 @@ def summarize_records(records, avg_spf):
         score_pool.extend(record.get("accepted_scores", []))
         scale_pool.extend(record.get("accepted_scales", []))
         confidence_pool.extend(record.get("accepted_confidences", []))
+        quality_pool.extend(record.get("accepted_quality_scores", []))
 
     score_filtered_total = summary["score_filtered_candidates_total"]
     summary["accepted_ratio_vs_score_filtered"] = (
@@ -122,6 +126,7 @@ def summarize_records(records, avg_spf):
     summary["accepted_score_stats"] = array_stats(score_pool)
     summary["accepted_scale_stats"] = array_stats(scale_pool)
     summary["accepted_confidence_stats"] = array_stats(confidence_pool)
+    summary["accepted_quality_stats"] = array_stats(quality_pool)
     return summary
 
 
@@ -133,6 +138,8 @@ def classify_failure_reason(record):
     pnp_failed = int(record.get("pnp_failed", 0) or 0)
     scale_refine_failed = int(record.get("scale_refine_failed", 0) or 0)
     reproj_filtered = int(record.get("reproj_filtered", 0) or 0)
+    pre_quality_candidates = int(record.get("pre_quality_candidates", 0) or 0)
+    quality_filtered = int(record.get("quality_filtered", 0) or 0)
 
     if accepted_candidates <= 0:
         if score_filtered_candidates <= 0:
@@ -141,6 +148,8 @@ def classify_failure_reason(record):
             return "all_pnp_fail"
         if scale_refine_failed > 0 and accepted_candidates <= 0:
             return "all_scale_refine_fail"
+        if pre_quality_candidates > 0 and quality_filtered >= pre_quality_candidates:
+            return "all_quality_filtered"
         if reproj_filtered > 0 and accepted_candidates <= 0:
             return "all_reproj_filtered"
         return "no_prediction_after_filter"

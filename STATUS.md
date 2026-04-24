@@ -10,7 +10,7 @@ Status commit at update: `T3.5b docs branch created from 1fb0084`
 - Cloud training/evaluation workspace: `/root/autodl-tmp/KGN-main`
 - Current local branch: `feat/t3.5b-inference-side-enhancement`
 - Current upstream branch: `origin/feat/t3.5b-inference-side-enhancement` after push
-- Current branch role: T3.5b mainline preparation branch for inference-side enhancement
+- Current branch role: T3.5b inference-side enhancement implementation/result branch
 - Branch base: documented T3.4 line `feat/t3.4-multigrasp-target-matching @ 1fb0084`
 
 Known local untracked files remain user/local files and must not be deleted or submitted:
@@ -33,6 +33,13 @@ All numbers below are `b1/e5` short-budget attribution results, not final thesis
 - `T3.4 nearest_cost best/last + P3 on`: `0.1954 / 0.2080 / 0.7480`
 - `T3.5a nearest_conf best + P3 on`: `0.1960 / 0.2026 / 0.7080`
 - `T3.5a nearest_conf last + P3 on`: `0.0978 / 0.0980 / 0.4750`
+- `T3.5b reproj top50 on T3.4 best`: `0.2010 / 0.1851 / 0.7110`
+- `T3.5b conf_reproj top50 on T3.4 best`: `0.2028 / 0.1866 / 0.7170`
+- `T3.5b conf_reproj top50 + q0.05 on T3.4 best`: `0.2035 / 0.1859 / 0.7160`
+- `T3.5b conf_reproj q0.05 no-topk on T3.4 best`: `0.1971 / 0.2067 / 0.7460`
+- `T3.5b reproj top80 on T3.4 best`: `0.1994 / 0.2041 / 0.7440`
+- `T3.5b reproj hard5 on T3.4 best`: `0.1965 / 0.2078 / 0.7480`
+- `T3.5b reproj hard5 transfer on T2 local repeat best`: `0.2100 / 0.2320 / 0.7430`
 - `KGN-main internal kgnv2base`: `0.1995 / 0.2240 / 0.7670` as historical/internal reference
 
 Candidate-level comparison against the main T2/T3 references:
@@ -52,6 +59,9 @@ Candidate-level comparison against the main T2/T3 references:
 - `T3.5a nearest_conf` is implemented, cloud-validated, and fully analyzed, but it does not enter the mainline.
 - `T3.5a nearest_conf best` is only marginally above `T3.4 nearest_cost` on `GSR`, while it is lower on `GCR` and clearly lower on `OSR`.
 - `T3.5a nearest_conf last` collapsed strongly and should not be treated as usable evidence for continuation.
+- `T3.5b` inference-side ranking/filtering is implemented and locally validated with frozen checkpoints.
+- `T3.5b` strong top-k / quality filtering improves candidate precision-style `GSR` slightly, but hurts `GCR` and `OSR`; it should not be treated as a mainline performance improvement.
+- `T3.5b --reproj_error_th 5` is a stable quality-cleaning setting: it removes extreme reprojection outliers and lowers accepted reprojection error while preserving `OSR`, but it does not create new successful images.
 - The current best interpretation of `T3.5a` is:
   - confidence-aware target selection is runnable,
   - but the current formulation over-favors easier/high-confidence matches,
@@ -104,9 +114,8 @@ Cloud transfer rule remains:
 ## Next Default Action
 
 - Keep `feat/t3.5-conf-aware-target-selection` as the T3.5a implementation/result archive branch.
-- Continue the next main experiment on the current `feat/t3.5b-inference-side-enhancement` branch.
-- Treat `feat/t3.5b-inference-side-enhancement` as opened from the documented T3.4 line:
-  - `feat/t3.4-multigrasp-target-matching @ 1fb0084`
-- T3.5b should treat training-side and inference-side attribution separately:
-  - do not mix T3.5a training-side changes into the initial T3.5b inference-side baseline
-  - only combine them later if a dedicated follow-up task decides to test that interaction
+- First close `feat/t3.5b-inference-side-enhancement` with code and documentation commits.
+- If the next work continues algorithm/data work in `KGN-main`, branch from the closed T3.5b branch unless a strict T3.4-only attribution experiment is needed.
+- For a strict clean algorithm attribution experiment, branch from `feat/t3.4-multigrasp-target-matching @ 1fb0084`.
+- Do not branch from T3.5a for the next mainline.
+- If the next work moves to simulation, use `/home/xyk/KGN_Sim` and its own branch lineage rather than mixing KGN-main branches.

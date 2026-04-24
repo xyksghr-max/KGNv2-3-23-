@@ -246,6 +246,7 @@ def test(opt):
         if opt.save_analysis:
             accepted_scales = analysis_meta["accepted_scales"] if opt.scale_kpts_mode else []
             accepted_confidences = analysis_meta.get("accepted_confidences", []) if opt.conf_branch else []
+            accepted_quality_scores = analysis_meta.get("accepted_quality_scores", [])
             analysis_records[img_id_int] = {
                 "img_id": img_id_int,
                 "scene_idx": int(scene_idx),
@@ -259,6 +260,8 @@ def test(opt):
                 "pnp_failed": int(analysis_meta["pnp_failed"]),
                 "scale_refine_failed": int(analysis_meta["scale_refine_failed"]),
                 "reproj_filtered": int(analysis_meta["reproj_filtered"]),
+                "pre_quality_candidates": int(analysis_meta.get("pre_quality_candidates", 0)),
+                "quality_filtered": int(analysis_meta.get("quality_filtered", 0)),
                 "accepted_candidates": int(analysis_meta["accepted_candidates"]),
                 "accepted_ratio": (
                     float(analysis_meta["accepted_candidates"] / analysis_meta["score_filtered_candidates"])
@@ -268,10 +271,14 @@ def test(opt):
                 "accepted_reprojection_error_stats": array_stats(reproj_errors),
                 "accepted_scale_stats": array_stats(accepted_scales),
                 "accepted_confidence_stats": array_stats(accepted_confidences),
+                "accepted_quality_stats": array_stats(accepted_quality_scores),
                 "accepted_scores": np.asarray(scores, dtype=np.float32),
                 "accepted_reprojection_errors": np.asarray(reproj_errors, dtype=np.float32),
                 "accepted_scales": np.asarray(accepted_scales, dtype=np.float32),
                 "accepted_confidences": np.asarray(accepted_confidences, dtype=np.float32),
+                "accepted_quality_scores": np.asarray(accepted_quality_scores, dtype=np.float32),
+                "post_pnp_score_type": analysis_meta.get("post_pnp_score_type", "none"),
+                "post_pnp_keep_topk": int(analysis_meta.get("post_pnp_keep_topk", -1)),
             }
 
             if opt.analysis_save_kpt_vis and (
@@ -422,6 +429,7 @@ def test(opt):
             analysis_records[img_id_int]["eval_prediction_count"] = int(pred_succ.size)
             analysis_records[img_id_int]["eval_successful_prediction_count"] = int(pred_succ.sum())
             analysis_records[img_id_int]["eval_any_success"] = bool(pred_succ.any())
+            analysis_records[img_id_int]["eval_successes"] = pred_succ
             analysis_records[img_id_int]["failure_reason"] = classify_failure_reason(
                 analysis_records[img_id_int]
             )
@@ -432,6 +440,48 @@ def test(opt):
                 os.path.join(analysis_dirs["images"], '{}.json'.format(record["img_id"])),
                 record
             )
+
+        candidate_rows = []
+        for record in ordered_records:
+            scores_arr = np.asarray(record.get("accepted_scores", []), dtype=np.float32).reshape(-1)
+            conf_arr = np.asarray(record.get("accepted_confidences", []), dtype=np.float32).reshape(-1)
+            reproj_arr = np.asarray(record.get("accepted_reprojection_errors", []), dtype=np.float32).reshape(-1)
+            quality_arr = np.asarray(record.get("accepted_quality_scores", []), dtype=np.float32).reshape(-1)
+            eval_successes = np.asarray(record.get("eval_successes", []), dtype=bool).reshape(-1)
+            num_candidates = int(record.get("accepted_candidates", 0) or 0)
+            for candidate_idx in range(num_candidates):
+                candidate_rows.append({
+                    "img_id": record["img_id"],
+                    "scene_idx": record["scene_idx"],
+                    "camera_idx": record["camera_idx"],
+                    "primary_shape": record["primary_shape"],
+                    "candidate_idx": candidate_idx,
+                    "accepted_score": (
+                        float(scores_arr[candidate_idx]) if candidate_idx < scores_arr.size else None
+                    ),
+                    "accepted_confidence": (
+                        float(conf_arr[candidate_idx]) if candidate_idx < conf_arr.size else None
+                    ),
+                    "accepted_reproj_error": (
+                        float(reproj_arr[candidate_idx]) if candidate_idx < reproj_arr.size else None
+                    ),
+                    "quality_score": (
+                        float(quality_arr[candidate_idx]) if candidate_idx < quality_arr.size else None
+                    ),
+                    "eval_success": (
+                        bool(eval_successes[candidate_idx]) if candidate_idx < eval_successes.size else None
+                    ),
+                })
+
+        save_csv(
+            os.path.join(analysis_dirs["base"], 'candidate_stats.csv'),
+            candidate_rows,
+            [
+                "img_id", "scene_idx", "camera_idx", "primary_shape", "candidate_idx",
+                "accepted_score", "accepted_confidence", "accepted_reproj_error",
+                "quality_score", "eval_success",
+            ]
+        )
 
         csv_rows = []
         for record in ordered_records:
@@ -447,12 +497,15 @@ def test(opt):
                 "pnp_failed": record["pnp_failed"],
                 "scale_refine_failed": record["scale_refine_failed"],
                 "reproj_filtered": record["reproj_filtered"],
+                "pre_quality_candidates": record["pre_quality_candidates"],
+                "quality_filtered": record["quality_filtered"],
                 "accepted_candidates": record["accepted_candidates"],
                 "accepted_ratio": record["accepted_ratio"],
                 "accepted_score_mean": record["accepted_score_stats"]["mean"],
                 "accepted_reproj_mean": record["accepted_reprojection_error_stats"]["mean"],
                 "accepted_scale_mean": record["accepted_scale_stats"]["mean"],
                 "accepted_confidence_mean": record["accepted_confidence_stats"]["mean"],
+                "accepted_quality_mean": record["accepted_quality_stats"]["mean"],
                 "eval_successful_prediction_count": record.get("eval_successful_prediction_count", 0),
                 "eval_any_success": record.get("eval_any_success", False),
                 "failure_reason": record.get("failure_reason", "unknown"),
@@ -465,9 +518,10 @@ def test(opt):
                 "img_id", "scene_idx", "camera_idx", "primary_shape", "num_objects",
                 "decoded_candidates", "score_filtered_candidates",
                 "pnp_attempted", "pnp_failed", "scale_refine_failed",
-                "reproj_filtered", "accepted_candidates", "accepted_ratio",
+                "reproj_filtered", "pre_quality_candidates", "quality_filtered",
+                "accepted_candidates", "accepted_ratio",
                 "accepted_score_mean", "accepted_reproj_mean",
-                "accepted_scale_mean", "accepted_confidence_mean",
+                "accepted_scale_mean", "accepted_confidence_mean", "accepted_quality_mean",
                 "eval_successful_prediction_count",
                 "eval_any_success", "failure_reason",
             ]
@@ -498,6 +552,7 @@ def test(opt):
                 "pnp_failed_total": shape_summary["pnp_failed_total"],
                 "scale_refine_failed_total": shape_summary["scale_refine_failed_total"],
                 "reproj_filtered_total": shape_summary["reproj_filtered_total"],
+                "quality_filtered_total": shape_summary["quality_filtered_total"],
                 "accepted_candidates_total": shape_summary["accepted_candidates_total"],
                 "images_with_any_prediction": shape_summary["images_with_any_prediction"],
                 "images_with_any_eval_success": shape_summary["images_with_any_eval_success"],
@@ -506,6 +561,7 @@ def test(opt):
                 "accepted_reproj_mean": shape_summary["accepted_reprojection_error_stats"]["mean"],
                 "accepted_scale_mean": shape_summary["accepted_scale_stats"]["mean"],
                 "accepted_confidence_mean": shape_summary["accepted_confidence_stats"]["mean"],
+                "accepted_quality_mean": shape_summary["accepted_quality_stats"]["mean"],
                 "failure_reason_counts": shape_summary["failure_reason_counts"],
             })
         save_csv(
@@ -520,6 +576,7 @@ def test(opt):
                 "pnp_failed_total",
                 "scale_refine_failed_total",
                 "reproj_filtered_total",
+                "quality_filtered_total",
                 "accepted_candidates_total",
                 "images_with_any_prediction",
                 "images_with_any_eval_success",
@@ -528,6 +585,7 @@ def test(opt):
                 "accepted_reproj_mean",
                 "accepted_scale_mean",
                 "accepted_confidence_mean",
+                "accepted_quality_mean",
                 "failure_reason_counts",
             ]
         )

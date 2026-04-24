@@ -3,6 +3,32 @@
 This file records stable project decisions so future sessions do not reopen
 settled questions after context compaction.
 
+## 2026-04-24 T3.5b Is Kept As Analysis Infrastructure, Not A Mainline Gain
+
+Decision:
+
+- `T3.5b inference-side enhancement` is implemented and locally validated.
+- It should be closed as a diagnostic / quality-cleaning branch, not as a mainline performance improvement.
+- The next `KGN-main` branch should normally start from the closed `feat/t3.5b-inference-side-enhancement` branch because default behavior is backward-compatible.
+- If the next experiment requires strict exclusion of T3.5b inference code, start from `feat/t3.4-multigrasp-target-matching @ 1fb0084`.
+- Do not start the next mainline from `feat/t3.5-conf-aware-target-selection`.
+
+Why:
+
+- E0 parity reproduced `T3.4 nearest_cost = 0.1954 / 0.2080 / 0.7480`.
+- Top-k and quality-filter variants improved `GSR` slightly but reduced `GCR` and `OSR`.
+- `--reproj_error_th 5` preserved `OSR` on both T3.4 and T2 local-repeat checkpoints and reduced reprojection outliers, but did not create new successful images.
+
+Consequences:
+
+- T3.5b can be written as an inference-side error-analysis and outlier-filtering result.
+- Further broad post-PnP threshold sweeps are not the best next priority.
+- The next high-value work should be either simulation/physical-style evaluation closure or a carefully scoped dataset/generalization pilot, not another unbounded T3.5b tuning round.
+
+Status:
+
+- active
+
 ## 2026-04-24 T3.5a Is Closed And T3.5b Should Start From T3.4
 
 Decision:

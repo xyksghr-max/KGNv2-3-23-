@@ -23,6 +23,8 @@ Last updated: 2026-04-24
 - Do not mix `model_best.pth` and `model_last.pth` as strict same-class evidence without explicitly saying which one was used.
 - Do not write b1/e5 quick attribution numbers as final full-budget thesis results.
 - Do not write that `T3.4 nearest_cost` has cleanly beaten `T2 cloud repeat + P3 on` without noting that the cloud-repeat reference only preserved `model_last.pth` because the run was interrupted by power loss.
+- Do not describe `T3.5b` top-k / quality-filter variants as effective mainline improvements; they improve precision-like `GSR` slightly but reduce `GCR` and `OSR`.
+- Do not overstate `T3.5b --reproj_error_th 5`; it is a stable outlier-cleaning / analysis setting, not a new success-generating module.
 
 ## Engineering Risks
 
@@ -54,6 +56,20 @@ Current decision:
 - Keep the branch as an archive of the attempt.
 - Do not continue the next main experiment from the T3.5a branch.
 - If confidence-aware training-side selection is revisited later, reopen it as a new dedicated retry with a weaker coupling design.
+
+### T3.5b inference-side enhancement is a diagnostic/quality-cleaning result
+
+Observation:
+
+- `post_pnp_score_type=none` reproduced the T3.4 frozen checkpoint result.
+- Top-k and quality-threshold variants remove many accepted candidates and lose object-level successes.
+- `--reproj_error_th 5` transfers to both T3.4 and T2 local-repeat checkpoints without hurting `OSR`, but it only removes outliers.
+
+Current decision:
+
+- Keep the code as optional inference-side analysis and quality-cleaning infrastructure.
+- Do not continue broad T3.5b parameter sweeps as the next main priority.
+- If a new `KGN-main` branch is opened, use closed T3.5b as the default base only because its defaults preserve old behavior; use `T3.4 @ 1fb0084` only when strict attribution requires excluding T3.5b code.
 
 ### `opts.py --pnp_type` default mismatch
 

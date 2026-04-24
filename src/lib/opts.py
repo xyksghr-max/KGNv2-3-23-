@@ -321,6 +321,17 @@ class opts(object):
                                  help="Fusion weight for confidence-aware ranking. final_score=(1-alpha)*center_score+alpha*confidence.")
         self.parser.add_argument('--conf_fusion_min_conf', type=float, default=0.0,
                                  help="Only apply confidence fusion when confidence >= this threshold. 0 disables gating.")
+        self.parser.add_argument('--post_pnp_score_type', type=str, default="none",
+                                 choices=["none", "reproj", "conf_reproj"],
+                                 help="Post-PnP candidate quality score type for inference-side filtering.")
+        self.parser.add_argument('--post_pnp_reproj_temp', type=float, default=1.0,
+                                 help="Temperature for converting reprojection error into a post-PnP quality term.")
+        self.parser.add_argument('--post_pnp_conf_weight', type=float, default=0.5,
+                                 help="Confidence weight for the conf_reproj post-PnP quality score.")
+        self.parser.add_argument('--post_pnp_quality_th', type=float, default=None,
+                                 help="Optional post-PnP quality threshold. None disables threshold filtering.")
+        self.parser.add_argument('--post_pnp_keep_topk', type=int, default=-1,
+                                 help="Keep only the top-K accepted candidates after post-PnP quality ranking. <=0 disables it.")
         self.parser.add_argument('--prob_pose_loss', action="store_true",
                                  help="Add a clean training-side probabilistic pose auxiliary loss without changing the inference chain.")
         self.parser.add_argument('--prob_pose_weight', type=float, default=0.0,
@@ -395,6 +406,10 @@ class opts(object):
 
         # added for the grasp pose
         opt.kpts_refine = not opt.no_kpts_refine
+        if opt.post_pnp_reproj_temp <= 0:
+            raise ValueError("--post_pnp_reproj_temp must be positive.")
+        if opt.post_pnp_conf_weight < 0 or opt.post_pnp_conf_weight > 1:
+            raise ValueError("--post_pnp_conf_weight must be in [0, 1].")
 
         if opt.head_conv == -1:  # init default head_conv
             opt.head_conv = 256 if 'dla' in opt.arch else 64

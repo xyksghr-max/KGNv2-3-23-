@@ -4,14 +4,13 @@ Last updated: 2026-04-24
 
 ## Task
 
-Start work on `T3.5b inference-side enhancement` on top of the documented
-`T3.4 nearest_cost` line.
+Close `T3.5b inference-side enhancement` and decide the next branch base.
 
 ## Goal
 
-Keep the current positive `T3.4 nearest_cost` training-side result stable, and improve the
-deterministic inference chain through candidate ranking / post-process logic rather than through
-another immediate training-side retry.
+Record the frozen-checkpoint inference-side result clearly, keep the current positive
+`T3.4 nearest_cost` training-side result stable, and avoid starting the next branch from stale
+or negative-result documentation.
 
 ## Branch Context
 
@@ -57,6 +56,11 @@ Why:
   - runnable and analyzable
   - not strong enough to replace T3.4 nearest_cost
   - likely over-favors easier / high-confidence matches and reduces coverage
+- T3.5b conclusion:
+  - implemented and locally validated
+  - `post_pnp_score_type=none` reproduces T3.4 metrics
+  - top-k / quality-filter variants are not mainline improvements because they reduce `GCR` and `OSR`
+  - `--reproj_error_th 5` is a stable reprojection-outlier cleaning option, not a new success-generating module
 
 Primary comparison targets remain:
 
@@ -68,6 +72,8 @@ Primary comparison targets remain:
 
 ## Next Step
 
-Design and implement `T3.5b inference-side enhancement` with clean attribution against the
-existing `T3.4 nearest_cost` baseline, then push the branch and use the cloud server only for
-pull / smoke / formal evaluation.
+Commit and push the T3.5b source/docs after review. For the next `KGN-main` branch:
+
+- default: branch from closed `feat/t3.5b-inference-side-enhancement`
+- strict T3.4-only attribution: branch from `feat/t3.4-multigrasp-target-matching @ 1fb0084`
+- do not branch from T3.5a
