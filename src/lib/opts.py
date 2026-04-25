@@ -301,6 +301,9 @@ class opts(object):
         # ps grasp dataset
         self.parser.add_argument('--ps_data_mode', type=str, default="single",
                                  help="PS dataset mode. single or multi")
+        self.parser.add_argument('--ps_data_dir', type=str, default="",
+                                 help="Explicit PS dataset directory. If set, overrides ps_data_mode's default data folder. "
+                                 "Relative paths are resolved under opt.data_dir.")
 
         # for inspection and debug
         self.parser.add_argument('--inspect_aug', action="store_true",

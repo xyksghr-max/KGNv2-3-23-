@@ -1,24 +1,100 @@
 # KGN-main Current Status
 
-Last updated: 2026-04-24
-Status commit at update: `T3.5b docs branch created from 1fb0084`
+Last updated: 2026-04-25
+Status commit at update: `97f9b22 feat: add post-pnp inference quality analysis`
 
 ## Current Snapshot
 
 - Local main workspace: `/home/xyk/KGN-main`
 - Local reference repository: `/home/xyk/KGN-main/KGN-Pro-main`
 - Cloud training/evaluation workspace: `/root/autodl-tmp/KGN-main`
-- Current local branch: `feat/t3.5b-inference-side-enhancement`
-- Current upstream branch: `origin/feat/t3.5b-inference-side-enhancement` after push
-- Current branch role: T3.5b inference-side enhancement implementation/result branch
-- Branch base: documented T3.4 line `feat/t3.4-multigrasp-target-matching @ 1fb0084`
+- Current local branch: `feat/t6-aigc-mesh-dataset-pilot`
+- Current upstream branch: local-only at task start
+- Current branch role: T6 geometry-enhanced mixed dataset pilot
+- Branch base: closed T3.5b line `feat/t3.5b-inference-side-enhancement @ 97f9b22`
 
 Known local untracked files remain user/local files and must not be deleted or submitted:
 
 - `KGNv2-Sim PROJECT_PROGRESS.md`
+- `T3.5b计划.md`
 - `implementation_plan.md`
 - `src/lib/third_party/__init__.py`
-- `邢亚坤-中期报告.doc`
+- `新对话提示词包.md`
+
+## Current T6 Dataset Pilot State
+
+T6 is a data-generation and loader-scope pilot, not another network/loss/post-process branch.
+
+T6 v1 implemented direction:
+
+- Add explicit PS dataset directory support through `--ps_data_dir`.
+- Add geometry-enhanced dataset configs that do not overwrite existing primitive data.
+- Keep geometry-enhanced object categories within the original PS shape taxonomy to preserve existing loader/evaluation behavior.
+
+T6 v1 target comparison:
+
+- `primitive-only`: existing `ps_grasp_single_1k`, 800 train scenes, about 4000 train images.
+- `primitive + geom-enhanced`: `ps_grasp_single_mix_t6_1k`, 800 train scenes, about 4000 train images.
+- First training budget: `batch_size=1`, `num_epochs=5`.
+- First evaluation target: existing primitive single/multi test; optional geometry-enhanced held-out test for actual geometric generalization.
+
+T6 v1 explicitly excludes:
+
+- Stable Diffusion / ControlNet texture enhancement.
+- Arbitrary Text-to-3D `.obj` automatic grasp annotation.
+- Changes to model architecture, loss, decode, PnP, or post-processing.
+
+T6 v1 conclusion:
+
+- `ps_grasp_single_mix_t6_1k` can be generated, but the visible/geometric change is too limited.
+- It is kept as a data-pipeline smoke result and is not the next b1/e5 main experiment.
+
+T6.2 current direction:
+
+- Switch from primitive parameter expansion to external mesh-labeled data.
+- First source: official ACRONYM sample.
+- First target: convert `ACRONYM .h5 + mesh` into PS-style `scene_info.json`, RGB/depth/seg, train/test split, then verify `PSGrasp` loader compatibility.
+
+T6.2 completed local smoke:
+
+- Installed `h5py` in local `kgnv2`.
+- Cloned ACRONYM official repo sample under `data/external/acronym_repo/`.
+- Added mesh conversion/generation/audit code.
+- Generated `data/ps_grasp_single_mesh_t62_smoke`:
+  - 50 scenes, 5 cameras each
+  - 40 train scenes / 10 test scenes
+  - 15000 total grasp labels
+  - 6522 non-colliding grasp labels
+  - sampled 2D keypoint projection: `3968 / 4000` inside image
+- Ran loader/training smoke:
+  - `exp_id=t62_mesh_loader_smoke`
+  - 20 iterations completed
+  - no NaN and no loader crash
+- Added T6.2-A asset audit script:
+  - `src/tools/audit_acronym_assets.py`
+- Official sample audit completed:
+  - `data/external/acronym/audit_sample/`
+  - `Mug`: valid training candidate, `1290` valid successful grasps
+  - `Table`: recognized but excluded as support category
+- Full ACRONYM `.h5` labels downloaded and extracted:
+  - archive: `data/external/acronym/downloads/acronym.tar.gz`
+  - labels: `data/external/acronym/grasps/`
+  - `.h5` file count: `8836`
+- Full h5-only audit completed:
+  - `data/external/acronym/audit_full_h5_only/`
+  - target-category `.h5` files: `832`
+  - `mesh_exists=0`
+  - `training_candidates=0`
+- Useful target label scale before mesh matching:
+  - `Mug/Bottle/Bowl/Cup/WineBottle` all have many objects with `>=100` valid successful grasps
+  - `Knife/Gun/Camera/Stapler/Pencil/CellPhone` also have strong label counts, useful as optional object-diversity categories
+
+T6.2 current limitation:
+
+- The completed smoke uses only the ACRONYM sample `Mug` object.
+- Full ACRONYM label access is solved locally.
+- ShapeNetSem mesh access is still required before constructing a meaningful 1k dataset or running b1/e5.
+- Current hard blocker is mesh availability, not `.h5` grasp-label availability.
 
 ## Current Experiment Facts
 

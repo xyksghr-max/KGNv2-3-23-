@@ -4,10 +4,11 @@ This file records known project risks and deferred issues. It is not a bug track
 for every experiment failure; keep it focused on risks that future Codex/agent
 sessions must not forget.
 
-Last updated: 2026-04-24
+Last updated: 2026-04-25
 
 ## Current High-Risk Misstatements
 
+- Do not describe T6 v1 as arbitrary AIGC mesh automatic grasp annotation; it is controlled geometry distribution augmentation.
 - Do not describe T3.4 `random` as effective; it is a negative/control result.
 - Do not describe T3.4 `nearest_cost` as a new overall strongest model; it is a positive b1/e5 attribution result close to the T2 strong-baseline range.
 - Do not describe T3.5a `nearest_conf` as effective or as the new mainline; it completed the full train/test cycle but did not beat `T3.4 nearest_cost` in a useful overall sense.
@@ -27,6 +28,34 @@ Last updated: 2026-04-24
 - Do not overstate `T3.5b --reproj_error_th 5`; it is a stable outlier-cleaning / analysis setting, not a new success-generating module.
 
 ## Engineering Risks
+
+### T6 geometry enhancement keeps original object labels
+
+Observation:
+
+- `PSGrasp` evaluation and scene reconstruction currently assume the original primitive object categories.
+- Introducing new `obj_types` directly would require changing loader, reconstruction, evaluation, analysis, and visualization paths.
+
+Current decision:
+
+- T6 v1 keeps geometry-enhanced objects under the existing labels such as `cuboid`, `cylinder`, `ring`, and `stick`.
+- The first T6 change is broader and more extreme dimension sampling, not a new arbitrary mesh object taxonomy.
+- If T6 later introduces new mesh classes, it needs a dedicated schema/evaluation update rather than silently adding labels to `scene_info.json`.
+
+### T6.2 ACRONYM labels are available but ShapeNetSem meshes are still a blocker
+
+Observation:
+
+- Full ACRONYM `.h5` labels have been downloaded and extracted locally under `data/external/acronym/grasps/`.
+- The h5-only audit found `8836` grasp files and `832` target-category files.
+- Target categories such as `Mug`, `Bottle`, `Bowl`, `Cup`, `WineBottle`, `Knife`, `Camera`, `Stapler`, `Pencil`, and `CellPhone` have enough successful width-valid grasps for dataset construction.
+- Current local mesh count is `0`; therefore there are still no full-data training candidates.
+
+Current decision:
+
+- Do not generate `ps_grasp_single_mesh_t62_1k` or run b1/e5 until matching ShapeNetSem meshes are present and loadable.
+- Do not claim full ACRONYM training data has been integrated; only the label side is locally available.
+- ShapeNetSem mesh download requires user-side account/registration or an already downloaded local mesh path.
 
 ### T3.4 target selection is training-side only
 

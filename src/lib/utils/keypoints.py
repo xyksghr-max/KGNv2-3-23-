@@ -43,7 +43,7 @@ def kpts_3d_to_2d(intrinsic, extrinsic, coord_3d, output_details = False):
         extrinsic = extrinsic
     else:
         raise ValueError("The extrinsic matrix must be either 4-by-4 or 3-by-4. Got {}".format(extrinsic.shape))
-    
+
     # camera coordinate
     p_c = extrinsic @ p_w_homog.T   #(3, N)
 
@@ -289,6 +289,11 @@ def get_ori_cls(kpts, range_mode=0, total_cls_num=20):
     # The orientation range
     if range_mode == 0:
         ori_range = (-np.pi/2, np.pi/2)
+        # Parallel-jaw opening is an undirected 180-degree periodic axis for
+        # orientation binning. External mesh labels can project the left-right
+        # vector outside [-90, 90], so wrap it instead of producing a negative
+        # class index.
+        ori = (ori - ori_range[0]) % np.pi + ori_range[0]
     elif range_mode == 1:
         ori_range = (-np.pi, np.pi)
     
@@ -385,10 +390,9 @@ if __name__ == "__main__":
         ],
         dtype=float,
     )
-    
+
     # expect: (0, 4, -4, -3) for the first one, and all False for the second one
     vpts, mask, corners_ordered = get_vanishing_points(corners, return_corners_ordered=True)
     print("\n Numpy test:")
     print(vpts)
     print(mask)
-    

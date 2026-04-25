@@ -17,6 +17,7 @@ from utils.file import read_numList_from_file, write_numList_to_file
 
 # global
 OBJ_NAMES = ["cuboid", "bowl", "sphere", "cylinder", "ring", "stick"]
+GEOM_OBJ_NAMES = ["cuboid", "cylinder", "ring", "stick"]
 
 class ObjSampler():
     """The sampler for creating the object with the sampled attributes
@@ -30,7 +31,8 @@ class ObjSampler():
         ring_rin_range,
         ring_h_range,
         stick_rin_range,
-        stick_h_range
+        stick_h_range,
+        geom_enhance_config=None
     ):
         self.cuboid_size_range = cuboid_size_range
         self.sphere_radius_range = sphere_radius_range
@@ -41,14 +43,52 @@ class ObjSampler():
         self.ring_h_range = ring_h_range
         self.stick_rin_range = stick_rin_range
         self.stick_h_range = stick_h_range
+        self.geom_enhance_config = geom_enhance_config or {}
     
-    def sample_obj(self, obj_type):
+    def _get_geom_range(self, key, fallback):
+        return self.geom_enhance_config.get(key, fallback)
+
+    def _sample_extreme_cuboid_dims(self):
+        """Sample a cuboid with a stronger aspect-ratio variation.
+
+        The object type remains ``cuboid`` so the original cuboid grasp family,
+        reconstruction, loader, and evaluator paths stay unchanged.
+        """
+        profiles = self.geom_enhance_config.get("cuboid_profiles", None)
+        if profiles is None:
+            profiles = [
+                {
+                    "name": "long_bar",
+                    "dims": [[0.12, 0.20], [0.015, 0.04], [0.025, 0.06]],
+                },
+                {
+                    "name": "thin_plate",
+                    "dims": [[0.08, 0.16], [0.06, 0.12], [0.008, 0.02]],
+                },
+                {
+                    "name": "flat_box",
+                    "dims": [[0.08, 0.14], [0.05, 0.10], [0.015, 0.035]],
+                },
+            ]
+
+        profile = random.choice(profiles)
+        dims = [
+            np.random.uniform(dim_range[0], dim_range[1])
+            for dim_range in profile["dims"]
+        ]
+        random.shuffle(dims)
+        return dims
+
+    def sample_obj(self, obj_type, geom_enhanced=False):
         color = np.random.choice(range(256), size=3)
         # color = np.array([24, 237, 234])    # for rendering a prettier object in the paper
         if obj_type == "cuboid":
-            x = np.random.uniform(self.cuboid_size_range[0], self.cuboid_size_range[1])
-            y = np.random.uniform(self.cuboid_size_range[0], self.cuboid_size_range[1])
-            z = np.random.uniform(self.cuboid_size_range[0], self.cuboid_size_range[1])
+            if geom_enhanced:
+                x, y, z = self._sample_extreme_cuboid_dims()
+            else:
+                x = np.random.uniform(self.cuboid_size_range[0], self.cuboid_size_range[1])
+                y = np.random.uniform(self.cuboid_size_range[0], self.cuboid_size_range[1])
+                z = np.random.uniform(self.cuboid_size_range[0], self.cuboid_size_range[1])
             obj = Cuboid(x, y, z, color=color)
         elif obj_type == "sphere":
             r = np.random.uniform(self.sphere_radius_range[0], self.sphere_radius_range[1])
@@ -57,21 +97,37 @@ class ObjSampler():
             r = np.random.uniform(self.bowl_radius_range[0], self.bowl_radius_range[1])
             obj = Sphere(r=r, semiSphere=True, pose=create_homog_matrix(T_vec=[0, 0, r]), color=color) # for semi-sphere, create init pose to move it above the table
         elif obj_type == "cylinder":
-            r_in = np.random.uniform(self.cylinder_rin_range[0], self.cylinder_rin_range[1])
-            height = np.random.uniform(self.cylinder_h_range[0], self.cylinder_h_range[1])
+            r_range = self._get_geom_range("cylinder_rin_range", self.cylinder_rin_range) if geom_enhanced else self.cylinder_rin_range
+            h_range = self._get_geom_range("cylinder_h_range", self.cylinder_h_range) if geom_enhanced else self.cylinder_h_range
+            r_in = np.random.uniform(r_range[0], r_range[1])
+            height = np.random.uniform(h_range[0], h_range[1])
             obj = Cylinder(r_in=r_in, height=height, color=color)
         elif obj_type == "ring":
-            r_in = np.random.uniform(self.ring_rin_range[0], self.ring_rin_range[1])
-            height = np.random.uniform(self.ring_h_range[0], self.ring_h_range[1])
+            r_range = self._get_geom_range("ring_rin_range", self.ring_rin_range) if geom_enhanced else self.ring_rin_range
+            h_range = self._get_geom_range("ring_h_range", self.ring_h_range) if geom_enhanced else self.ring_h_range
+            r_in = np.random.uniform(r_range[0], r_range[1])
+            height = np.random.uniform(h_range[0], h_range[1])
             obj = Cylinder(r_in = r_in, height = height, mode="ring", color=color)
         elif obj_type == "stick":
-            r_in = np.random.uniform(self.stick_rin_range[0], self.stick_rin_range[1])
-            height = np.random.uniform(self.stick_h_range[0], self.stick_h_range[1])
+            r_range = self._get_geom_range("stick_rin_range", self.stick_rin_range) if geom_enhanced else self.stick_rin_range
+            h_range = self._get_geom_range("stick_h_range", self.stick_h_range) if geom_enhanced else self.stick_h_range
+            r_in = np.random.uniform(r_range[0], r_range[1])
+            height = np.random.uniform(h_range[0], h_range[1])
             obj = Cylinder(r_in = r_in, height = height, mode="stick", color=color)
         else:
             raise NotImplementedError("The object type \"{}\" is not implemented".format(obj_type))
 
         return obj
+
+def _should_use_geom_enhancement(object_config):
+    geom_mode = object_config.get("geom_mode", "primitive")
+    if geom_mode == "primitive":
+        return False
+    if geom_mode == "geom":
+        return True
+    if geom_mode == "mixed":
+        return random.random() < float(object_config.get("geom_probability", 0.5))
+    raise NotImplementedError("Unsupported geom_mode: {}".format(geom_mode))
 
 def generate_and_write_split(total_scene_num, test_percentage, save_dir):
     """Generate the scene-wise train/test split and write the list out to a txt file
@@ -112,7 +168,13 @@ def main(args, configs):
         ring_h_range=configs["OBJECT"]["ring_h_range"],
         stick_rin_range=configs["OBJECT"]["stick_rin_range"],
         stick_h_range=configs["OBJECT"]["stick_h_range"],
+        geom_enhance_config=configs["OBJECT"].get("GEOM_ENHANCE", {}),
     )
+    geom_mode = configs["OBJECT"].get("geom_mode", "primitive")
+    if geom_mode != "primitive":
+        print("T6 geometry enhancement mode: {} (prob={})".format(
+            geom_mode, configs["OBJECT"].get("geom_probability", "n/a")
+        ))
 
     logger = DataLogger(logging_directory=configs["SAVE_PATH"])
 
@@ -134,14 +196,22 @@ def main(args, configs):
         # determine the scene objects
         if configs["OBJECT"]["mode"] == "all":
             obj_names_scene = OBJ_NAMES 
+            geom_flags_scene = [
+                _should_use_geom_enhancement(configs["OBJECT"]) and obj_name in GEOM_OBJ_NAMES
+                for obj_name in obj_names_scene
+            ]
         elif configs["OBJECT"]["mode"] == "single":
-            obj_names_scene = [random.choice(OBJ_NAMES)]
+            use_geom = _should_use_geom_enhancement(configs["OBJECT"])
+            obj_pool = configs["OBJECT"].get("geom_obj_names", GEOM_OBJ_NAMES) if use_geom else OBJ_NAMES
+            obj_names_scene = [random.choice(obj_pool)]
+            geom_flags_scene = [use_geom and obj_names_scene[0] in GEOM_OBJ_NAMES]
             # obj_names_scene = ["stick"]
 
         # add the objects
-        random.shuffle(obj_names_scene)
-        for idx, obj_name in enumerate(obj_names_scene):
-            obj = obj_sampler.sample_obj(obj_name)
+        obj_scene_pairs = list(zip(obj_names_scene, geom_flags_scene))
+        random.shuffle(obj_scene_pairs)
+        for idx, (obj_name, geom_enhanced) in enumerate(obj_scene_pairs):
+            obj = obj_sampler.sample_obj(obj_name, geom_enhanced=geom_enhanced)
             obj_list.append(obj)
             # If sphere or semi-sphere, just sample the location instead of the orientation
             if obj_name == "sphere" or obj_name == "bowl":

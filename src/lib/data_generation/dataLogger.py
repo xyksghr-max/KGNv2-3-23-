@@ -56,7 +56,7 @@ class DataLogger():
 
     def save_scene_data(self, scene_idx, camera_mat, camera_poses, rgb_imgs, depths, seglabel_maps,\
             grasp_poses, grasp_widths, grasp_collision, \
-            obj_types, obj_dims, obj_poses):
+            obj_types, obj_dims, obj_poses, mesh_meta=None):
         """ Save scenen data
 
         Args:
@@ -81,8 +81,8 @@ class DataLogger():
         self.save_colors(rgb_imgs)
         self.save_depths(depths)
         self.save_seg(seglabel_maps)
-        self.save_info(camera_mat, camera_poses, grasp_poses, grasp_widths, grasp_collision, 
-            obj_types=obj_types, obj_dims=obj_dims, obj_poses=obj_poses)
+        self.save_info(camera_mat, camera_poses, grasp_poses, grasp_widths, grasp_collision,
+            obj_types=obj_types, obj_dims=obj_dims, obj_poses=obj_poses, mesh_meta=mesh_meta)
     
     def _make_scene_subdirs(self, scene_idx):
         """Make the scene subdirectories and store them as attributes of the logger.
@@ -140,7 +140,7 @@ class DataLogger():
 
     def save_info(self, camera_mat, camera_poses, \
             grasp_poses, grasp_widths, grasp_collision, \
-            obj_types, obj_dims, obj_poses):
+            obj_types, obj_dims, obj_poses, mesh_meta=None):
         """ Save the infos as json """
 
         # the file path
@@ -164,6 +164,8 @@ class DataLogger():
             "obj_dims": obj_dims_list,
             "obj_poses": obj_poses_list
         }
+        if mesh_meta is not None:
+            data["mesh_meta"] = mesh_meta
 
         # save out
         with open(filepath, "w") as f:

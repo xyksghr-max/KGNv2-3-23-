@@ -54,6 +54,11 @@ class PSGrasp(data.Dataset):
         self.opt = opt
         if self.opt.unitTest:
             self.data_dir = os.path.join(opt.data_dir, "ps_grasp_unitTest")
+        elif getattr(self.opt, "ps_data_dir", ""):
+            if os.path.isabs(self.opt.ps_data_dir):
+                self.data_dir = self.opt.ps_data_dir
+            else:
+                self.data_dir = os.path.join(opt.data_dir, self.opt.ps_data_dir)
         else:
             if self.opt.ps_data_mode == "single":
                 self.data_dir = os.path.join(opt.data_dir, "ps_grasp_single_1k")
@@ -404,6 +409,8 @@ class PSGrasp(data.Dataset):
                 # parse results
                 # import pdb; pdb.set_trace()
                 metric_calculators["all"].update(0, gt_num, pred_succ_num, gt_cover_num)
+                if obj_types[i] not in metric_calculators:
+                    metric_calculators[obj_types[i]] = MetricCalculator(self.opt)
                 metric_calculators[obj_types[i]].update(0, gt_num, pred_succ_num, gt_cover_num)
             
             # store the eval results
@@ -780,5 +787,3 @@ class PSGrasp(data.Dataset):
 
     
  
-
-

@@ -1,0 +1,40 @@
+SAVE_PATH: "../data/ps_grasp_multi_mix_t6_1k"
+CARDINALITY:
+  scene_num: 1000
+  test_percentage: 20
+TABLE:
+  size: 1
+  thickness: 0.04
+CAMERA:
+  intrinsic: "realsense"
+  camera_num: 5
+  radius_range: [0.6, 1.0]
+  latitude_range: [30, 90]
+OBJECT:
+  mode: "all"
+  geom_mode: "mixed"
+  geom_probability: 0.5
+  geom_obj_names: ["cuboid", "cylinder", "ring", "stick"]
+  cuboid_size_range: [0.04, 0.12]
+  sphere_radius_range: [0.02, 0.05]
+  bowl_radius_range: [0.04, 0.08]
+  cylinder_rin_range: [0.03, 0.07]
+  cylinder_h_range: [0.05, 0.1]
+  ring_rin_range: [0.02, 0.05]
+  ring_h_range: [0.008, 0.024]
+  stick_rin_range: [0.005, 0.01]
+  stick_h_range: [0.05, 0.10]
+  GEOM_ENHANCE:
+    cuboid_profiles:
+      - name: "long_bar"
+        dims: [[0.12, 0.20], [0.015, 0.04], [0.025, 0.06]]
+      - name: "thin_plate"
+        dims: [[0.08, 0.16], [0.06, 0.12], [0.008, 0.02]]
+      - name: "flat_box"
+        dims: [[0.08, 0.14], [0.05, 0.10], [0.015, 0.035]]
+    cylinder_rin_range: [0.018, 0.05]
+    cylinder_h_range: [0.10, 0.18]
+    ring_rin_range: [0.018, 0.055]
+    ring_h_range: [0.004, 0.018]
+    stick_rin_range: [0.003, 0.008]
+    stick_h_range: [0.10, 0.18]

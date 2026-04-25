@@ -3,6 +3,32 @@
 This file records stable project decisions so future sessions do not reopen
 settled questions after context compaction.
 
+## 2026-04-25 T6 Uses Controlled Geometry Enhancement Before Arbitrary AIGC Mesh
+
+Decision:
+
+- T6 v1 will test a `primitive + controlled geometry-enhanced` mixed dataset.
+- The first implementation keeps enhanced objects inside the existing PS object taxonomy (`cuboid`, `cylinder`, `ring`, `stick`) and changes their size/aspect-ratio distributions.
+- The first T6 comparison uses the same training image count and b1/e5 budget as the primitive-only baseline.
+- Arbitrary Text-to-3D / Objaverse `.obj` meshes are deferred to a later T6 stage or simulation testbed stage.
+
+Why:
+
+- Existing `PSGrasp` evaluation and reconstruction paths assume the original primitive object types.
+- Keeping object types unchanged preserves `generate_grasp_family()`, simplified gripper collision filtering, and the current `test.py` metric path.
+- Arbitrary mesh data would need a new grasp-labeling pipeline with surface sampling, collision checking, stability handling, and quality filtering; this is too risky as the first dataset pilot.
+- Texture-only generative augmentation is not prioritized because current validation is offline KGN-main evaluation and PyBullet simulation rather than real-camera robot deployment.
+
+Consequences:
+
+- T6 v1 can be described as controlled geometric distribution augmentation, not full AIGC mesh grasp annotation.
+- T6 v1 success requires no obvious regression on primitive tests and preferably a gain on a geometry-enhanced held-out test.
+- Generated data stays out of Git.
+
+Status:
+
+- active
+
 ## 2026-04-24 T3.5b Is Kept As Analysis Infrastructure, Not A Mainline Gain
 
 Decision:
