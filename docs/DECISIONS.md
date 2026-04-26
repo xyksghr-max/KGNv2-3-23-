@@ -3,6 +3,33 @@
 This file records stable project decisions so future sessions do not reopen
 settled questions after context compaction.
 
+## 2026-04-26 T6.3 Uses GraspNet Object-Level Assets While ShapeNetSem Is Pending
+
+Decision:
+
+- T6.3 switches the next dataset-feasibility effort from ACRONYM full-data construction to GraspNet object-level assets.
+- Use GraspNet `models/` and `grasp_label/` first.
+- Do not download the 80GB+ official RGB-D scene image packages in the first pass.
+- Do not extract or depend on scene-level `collision_label/` before object-level synthetic rendering is proven.
+
+Why:
+
+- ShapeNetSem access for full ACRONYM is still uncertain.
+- GraspNet object models and object-level grasp labels are locally available and loadable.
+- The full asset audit found `88` usable objects and `8,419,024` valid grasps after score, width, and object-level collision filtering.
+- This route is better aligned with the current PS-style synthetic rendering pipeline than waiting indefinitely for ShapeNetSem approval.
+
+Consequences:
+
+- The next implementation target is a small `ps_grasp_single_graspnet_t63_smoke` dataset, not b1/e5 training.
+- GraspNet label conversion must explicitly verify frame conventions and score semantics.
+- The resulting dataset should be described as a GraspNet object-level mesh-label adaptation, not full GraspNet scene training.
+- ACRONYM + ShapeNetSem remains a retained route and can resume after mesh access is granted.
+
+Status:
+
+- active
+
 ## 2026-04-25 T6 Uses Controlled Geometry Enhancement Before Arbitrary AIGC Mesh
 
 Decision:
@@ -343,6 +370,113 @@ Consequences:
 - Do not keep adding unrelated changes directly to the T3.1 baseline branch.
 - Use explicit `git add <file>` only.
 - Do not use `git add .`.
+
+Status:
+
+- active
+
+## 2026-04-26 T6.3 GraspNet Object-Level PS Conversion
+
+Decision:
+
+- Use GraspNet object-level `models/` and `grasp_label/` as the active external-mesh dataset route while ShapeNetSem access for full ACRONYM remains pending.
+- First convert GraspNet object-level grasps into synthetic PS-style RGB-D data with the existing renderer, not the official 80GB+ GraspNet RGB-D scene packages.
+- Keep the accepted smoke dataset as `data/ps_grasp_single_graspnet_t63_smoke_v2`.
+
+Why:
+
+- Full local GraspNet asset audit found `88 / 88` loadable meshes and labels, with `8,419,024` valid grasps after score, width, and object-level collision filtering.
+- T6.3-C smoke conversion produced 50 PS-style scenes and passed `audit_ps_dataset.py`.
+- `PSGrasp` loader/training smoke completed 20 iterations, proving the converted data can enter the current training chain.
+
+Consequences:
+
+- It is now valid to describe T6.3 as an implemented and loader-verified GraspNet-to-PS smoke pipeline.
+- It is not yet valid to claim any training-performance improvement.
+- Do not start b1/e5 until the smoke visualizations are manually inspected and a 1k GraspNet-derived/mixed dataset protocol is fixed.
+- The partial `data/ps_grasp_single_graspnet_t63_smoke` directory with `48 / 50` scenes is diagnostic only.
+
+Status:
+
+- active
+
+## 2026-04-26 T6.4 GraspNet Real RGB-D Evaluation Is Exploratory
+
+Decision:
+
+- Use `data/external/graspnet/real_rgbd_subset/` as an external real RGB-D evaluation source.
+- Convert it to PS-style eval format for `test.py`, but do not treat it as a training dataset.
+- Use official KGNv2 primitive-trained checkpoint `exp/kgnv2.pth` for the first external real-domain evaluation.
+- Keep `train_4.zip` out of the main T6.4 evaluation because it belongs to the GraspNet train split.
+
+Why:
+
+- The real subset contains `90` GraspNet test scenes and `1440` RealSense frames.
+- It directly tests the thesis claim that a model trained on simple primitive synthetic data can produce useful grasp candidates on real RGB-D images of complex objects.
+- Strict smoke evaluation produced `0 / 0 / 0`, but diagnostics showed the model was not silent.
+- Relaxed smoke evaluation produced nonzero matches: `0.0190 / 0.0020 / 0.0540`, with `17 / 48` images having at least one successful prediction.
+- A follow-up relaxed smoke evaluation with `--refine_scale` produced a much stronger result: `0.3894 / 0.0371 / 0.5047`, with `48 / 48` images having at least one successful prediction.
+- Full 1440-frame evaluation with the same `--refine_scale` protocol produced `0.4751 / 0.0443 / 0.4876`, with `1434 / 1440` images having at least one successful prediction.
+- Audit evidence points to real-depth scale mismatch as the main no-refine failure source, not a basic GraspNet intrinsics or depth-factor conversion error.
+
+Consequences:
+
+- T6.4 should be described as real-domain generalization exploration and qualitative/diagnostic evidence.
+- Do not use the strict zero result to claim the model cannot grasp real objects.
+- Do not compare the GraspNet-real GSR/GCR/OSR directly against primitive-test GSR/GCR/OSR as a main superiority claim; the data source, GT density, and evaluation assumptions differ.
+- For GraspNet-real converted evaluation, include `--refine_scale` in the recommended diagnostic protocol.
+- For converted mesh/real GraspNet data, do not use primitive GT resampling options such as `--rot_sample_num` or `--trl_sample_num`.
+
+Status:
+
+- active
+
+## 2026-04-27 GraspNet88 Single-Object Synthetic Mesh Evaluation Is Completed
+
+Decision:
+
+- Treat `data/ps_grasp_single_graspnet_t63_eval_88obj` as the completed GraspNet object-level single-object synthetic mesh evaluation set.
+- Use all `88` object ids `000..087` and all `440` rendered RGB-D samples as the main result.
+- Keep sparse-label objects in the main table rather than removing them.
+
+Why:
+
+- The dataset covers exactly `88` GraspNet object meshes with `5` views per object.
+- `train.txt` is empty and `test.txt` covers all scenes, matching the intended eval-only role.
+- The dataset passed loader/audit checks and contains no zero-label projected samples.
+- Although objects `009`, `040`, and `065` have few non-colliding GT grasps, removing them would bias the full-object-coverage claim.
+
+Consequences:
+
+- The main thesis table can report all-88-object synthetic mesh evaluation.
+- Object `065` should be discussed as a difficult sparse-label failure case.
+- Do not describe this dataset as a real-camera single-object GraspNet split; it is synthetic rendering from GraspNet meshes and labels.
+
+Status:
+
+- active
+
+## 2026-04-27 KGNv2 + Refine-Scale Is an Inference-Side Improvement
+
+Decision:
+
+- Treat `KGNv2 + Refine-Scale` as a project-level inference-side improvement, not as pure paper-2 original inference and not as a training-side method.
+- Report `KGNv2 no-refine` and `KGNv2 + Refine-Scale` separately.
+
+Why:
+
+- Paper-2/KGNv2 core inference uses the separate scale branch to set translation magnitude from predicted scale.
+- Current code also has an optional `--refine_scale` path that replaces the translation magnitude with the RGB-D depth at the predicted grasp center.
+- On GraspNet88 single-object synthetic mesh eval, `--refine_scale` improves all three threshold settings:
+  - strict `1cm + 20deg`: `0.0249 / 0.0065 / 0.2318` -> `0.0614 / 0.0135 / 0.3750`
+  - standard `2cm + 30deg`: `0.1685 / 0.0567 / 0.6409` -> `0.2868 / 0.0864 / 0.8136`
+  - relaxed `3cm + 45deg`: `0.4338 / 0.2189 / 0.8841` -> `0.5424 / 0.2696 / 0.9364`
+
+Consequences:
+
+- `KGNv2 no-refine` is the paper-2 original-style external-evaluation protocol.
+- `KGNv2 + Refine-Scale` is a valid inference-side RGB-D scale refinement improvement for this thesis project.
+- Qualitative two-finger gripper visualizations should label whether they are no-refine or Refine-Scale.
 
 Status:
 

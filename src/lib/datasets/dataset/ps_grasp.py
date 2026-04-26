@@ -333,6 +333,7 @@ class PSGrasp(data.Dataset):
         metric_calculators["all"] = MetricCalculator(self.opt)
         for obj_type in ["cuboid", "cylinder", "sphere", "semi_sphere", "stick", "ring"]:
             metric_calculators[obj_type] = MetricCalculator(self.opt)
+        has_multi_object_scene = False
 
         tqdm_bar = tqdm(total=len(results))
         print("\nEvaluating the results...")
@@ -382,11 +383,12 @@ class PSGrasp(data.Dataset):
             grasp_poses_pred = grasp_poses_pred[mask, :, :]
 
             # store the predict number
-            for key, val in metric_calculators.items():
-                metric_calculators[key].grasp_pred_num += N_grasps
+            metric_calculators["all"].grasp_pred_num += N_grasps
 
             # iterate through the objects in the scene
             N_obj = len(obj_types)
+            if N_obj > 1:
+                has_multi_object_scene = True
             pred_succ = np.zeros((N_grasps,), dtype=bool)
             for i in range(N_obj):
 
@@ -411,7 +413,14 @@ class PSGrasp(data.Dataset):
                 metric_calculators["all"].update(0, gt_num, pred_succ_num, gt_cover_num)
                 if obj_types[i] not in metric_calculators:
                     metric_calculators[obj_types[i]] = MetricCalculator(self.opt)
-                metric_calculators[obj_types[i]].update(0, gt_num, pred_succ_num, gt_cover_num)
+                # Per-class GSR is only well-defined for single-object scenes: in that
+                # case all predictions in this image target the only object/class.
+                # In multi-object scenes, predictions are class-agnostic and cannot be
+                # assigned to one object type without an extra targeting signal.
+                class_pred_num = N_grasps if N_obj == 1 else 0
+                metric_calculators[obj_types[i]].update(
+                    class_pred_num, gt_num, pred_succ_num, gt_cover_num
+                )
             
             # store the eval results
             eval_results[data_id] = pred_succ
@@ -424,7 +433,7 @@ class PSGrasp(data.Dataset):
         for key, val in metric_calculators.items():
             # If multi-object scenario, grasp success rate for individual object is meaningless 
             # since we don't have information regarding which predicted grasp is targetting which object
-            if self.opt.ps_data_mode == "multi" and key != "all":
+            if (self.opt.ps_data_mode == "multi" or has_multi_object_scene) and key != "all":
                 NA_gsr = True
             else:
                 NA_gsr = False

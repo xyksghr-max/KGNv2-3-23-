@@ -1,0 +1,29 @@
+SAVE_PATH: "../data/ps_grasp_single_graspnet_t63_eval_88obj"
+CARDINALITY:
+  scene_num: 88
+  test_percentage: 100
+  shuffle_split: false
+  max_attempts_per_scene: 40
+  min_noncolliding_grasps: 20
+  allow_best_effort: true
+  best_effort_min_noncolliding_grasps: 1
+TABLE:
+  size: 1
+  thickness: 0.04
+CAMERA:
+  intrinsic: "realsense"
+  camera_num: 5
+  radius_range: [0.6, 1.0]
+  latitude_range: [30, 90]
+GRASPNET_DATA:
+  source: "graspnet"
+  raw_root: "../data/external/graspnet/raw"
+  max_objects: -1
+  sampling_mode: "sequential"
+  mesh_name: "nontextured_simplified.ply"
+  max_grasps_per_object: 300
+  min_grasps_per_object: 100
+  width_range: [0.01, 0.085]
+  score_max: 0.4
+  use_collision: true
+  convert_to_kgn_frame: true

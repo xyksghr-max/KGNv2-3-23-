@@ -57,6 +57,70 @@ Current decision:
 - Do not claim full ACRONYM training data has been integrated; only the label side is locally available.
 - ShapeNetSem mesh download requires user-side account/registration or an already downloaded local mesh path.
 
+### T6.3 GraspNet object-level data is promising but not yet full-experiment ready
+
+Observation:
+
+- GraspNet object-level `models/` and `grasp_label/` have been extracted locally.
+- The first full asset audit found `88 / 88` loadable meshes and `88 / 88` loadable label files.
+- `grasp_label/*.npz` contains `points`, `offsets`, `scores`, and object-level `collision`.
+- After score, width, and object-level collision filtering, the audit found `8,419,024` valid grasps.
+- T6.3-C generated an accepted PS-style smoke dataset:
+  - `data/ps_grasp_single_graspnet_t63_smoke_v2`
+  - 50 scenes
+  - 15000 total grasps
+  - 4675 non-colliding grasps
+  - 3995 / 4000 sampled projected keypoints inside the image
+- `PSGrasp` loader/training smoke completed 20 iterations on this dataset.
+
+Current decision:
+
+- Treat GraspNet as the most promising current external-mesh data route while ShapeNetSem access is pending.
+- Do not use the scene-level `collision_label/` package in the first pass; it is large and not required for object-level synthetic rendering.
+- It is now fair to claim that a GraspNet object-level PS-style smoke conversion has been implemented and loader-verified.
+- Do not claim GraspNet has produced an effective training improvement yet.
+- Do not run b1/e5 until the smoke visualizations are manually inspected and a 1k GraspNet/mixed dataset is generated with a fixed comparison protocol.
+
+Risk:
+
+- GraspNet frame conventions, score semantics, and grasp-parameter-to-4x4 conversion still need careful verification before training.
+- Synthetic rendering with GraspNet object meshes will not be identical to official GraspNet scene RGB-D images, so thesis wording must describe it as object-level GraspNet-label adaptation, not full GraspNet training.
+- The partial first directory `data/ps_grasp_single_graspnet_t63_smoke` has only `48 / 50` scenes and must not be used as the accepted smoke dataset.
+
+### T6.4 real GraspNet RGB-D evaluation is diagnostic, not a main quantitative claim yet
+
+Observation:
+
+- `data/external/graspnet/real_rgbd_subset/` contains `90` real GraspNet RealSense scenes and `1440` converted frames.
+- `data/ps_grasp_real_graspnet_t64_smoke` and `data/ps_grasp_real_graspnet_t64_eval` have been generated.
+- Strict smoke evaluation with official `exp/kgnv2.pth` gave `0.0000 / 0.0000 / 0.0000`.
+- This strict zero is not a silent-model failure:
+  - `decoded_candidates_total=4790`
+  - `score_filtered_candidates_total=114`
+  - `pnp_failed_total=0`
+  - `images_with_any_prediction=32 / 48`
+- Relaxed evaluation with `center_thresh=0.1`, `dist_th=0.05`, and `angle_th=45` gave `0.0190 / 0.0020 / 0.0540`.
+- Relaxed diagnostics found `17 / 48` images with at least one eval success and `89` successful prediction candidates.
+- Adding `--refine_scale` under the same relaxed setting gave `0.3894 / 0.0371 / 0.5047`.
+- With `--refine_scale`, all `48 / 48` smoke images had at least one eval success and there were `1628` successful prediction candidates.
+- Full 1440-frame evaluation with the same `--refine_scale` protocol gave `0.4751 / 0.0443 / 0.4876`, with `1434 / 1440` images having at least one eval success.
+- The converted GraspNet smoke data uses the RealSense intrinsic matrix from GraspNet metadata, and depth conversion follows `factor_depth=1000`.
+- The dominant diagnosed issue is scale mismatch: real object-mask depth mean is about `0.412 m`, while no-refine accepted predicted scale mean is about `0.582 m`.
+
+Current decision:
+
+- Do not write that `exp/kgnv2.pth` cannot grasp real objects.
+- It is fair to write that the primitive-trained KGNv2 model can produce plausible real RGB-D grasp candidates, and that real-depth scale refinement is necessary for meaningful converted GraspNet-real matching.
+- Do not use T6.4 as the main quantitative effectiveness table unless a stronger, validated evaluation protocol is established.
+- Use T6.4 primarily as external real-domain generalization exploration, qualitative visualization, and failure-analysis evidence.
+- Do not use `--rot_sample_num` or `--trl_sample_num` on converted mesh/real GraspNet eval sets; those options trigger primitive-only GT reconstruction and crash on `obj_type="mesh"`.
+
+Risk:
+
+- GraspNet object-level labels projected through real-scene meta poses are extremely dense and may not match the KGN primitive evaluation assumptions.
+- Real RGB-D domain shift, background clutter, object texture, segmentation convention, scale prediction bias, and gripper-frame convention can all depress strict metrics.
+- The existing Mayavi/point-cloud qualitative result can support "the model proposes plausible grasps", but should not be overclaimed as physical robot success without real execution.
+
 ### T3.4 target selection is training-side only
 
 Observation:
@@ -99,6 +163,50 @@ Current decision:
 - Keep the code as optional inference-side analysis and quality-cleaning infrastructure.
 - Do not continue broad T3.5b parameter sweeps as the next main priority.
 - If a new `KGN-main` branch is opened, use closed T3.5b as the default base only because its defaults preserve old behavior; use `T3.4 @ 1fb0084` only when strict attribution requires excluding T3.5b code.
+
+### GraspNet88 protocol labeling risk
+
+Observation:
+
+- GraspNet88 single-object synthetic mesh eval now has two protocols:
+  - `KGNv2 no-refine`: official KGNv2 checkpoint with paper-2 scale branch and no additional depth correction.
+  - `KGNv2 + Refine-Scale`: the same official checkpoint plus inference-side RGB-D depth scale refinement.
+- `Refine-Scale` improves metrics substantially:
+  - relaxed `3cm + 45deg`: `0.4338 / 0.2189 / 0.8841` -> `0.5424 / 0.2696 / 0.9364`.
+
+Risk:
+
+- Writing `KGNv2 + Refine-Scale` as if it were the pure paper-2/KGNv2 original inference protocol would be inaccurate.
+- Writing it as a training-side improvement would also be inaccurate; it does not change the network weights.
+
+Current decision:
+
+- Use `KGNv2 no-refine` for the paper-2 original-style external-eval line.
+- Use `KGNv2 + Refine-Scale` as an inference-side RGB-D scale refinement improvement.
+- Keep both protocols in separate rows or clearly separate paragraphs in thesis tables.
+
+### GraspNet88 sparse-label and object-difficulty risk
+
+Observation:
+
+- The 88-object synthetic mesh eval covers all object ids `000..087`, but some objects have few non-colliding GT grasps after placement and collision filtering.
+- Sparse-label outliers:
+  - object `009`: `14` non-colliding GT
+  - object `040`: `19` non-colliding GT
+  - object `065`: `2` non-colliding GT
+- Under Refine-Scale relaxed `3cm + 45deg`, only object `065` has no successful view:
+  `0 / 5` successful views and `0 / 49` successful predictions.
+
+Risk:
+
+- A failed sparse-label object should not be interpreted as the model generally failing all complex objects.
+- Filtering by mean GT count would create a biased easier subset and should not replace the main all-88 result.
+
+Current decision:
+
+- Keep the full 88-object result as the main external mesh evaluation.
+- Mention object `065` as a limitation case caused by both high-aspect-ratio geometry and very sparse GT.
+- Optional sensitivity analysis can exclude only scenes below `20` GT, but the primary result remains full coverage.
 
 ### `opts.py --pnp_type` default mismatch
 
